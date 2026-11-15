@@ -59,6 +59,8 @@ jobs:
         run: python tests/windows_smoke.py dist/LUMAVUN-Trade-Server.exe
       - name: Smoke test packaged dashboard native MCP client
         run: python tests/windows_smoke.py dist/LUMAVUN-Trade-Server.exe native-mcp
+      - name: Smoke test Office UI (frozen EXE + actual widget render)
+        run: python tests/windows_office_smoke.py dist/LUMAVUN-Trade-Server.exe
       - name: Smoke test packaged MCP MT5 imports
         run: python tests/windows_smoke.py dist/Lumavun-MT5-MCP.exe
       - name: Smoke test packaged HTTP Gateway MT5 imports
@@ -71,5 +73,6 @@ jobs:
             dist/LUMAVUN-Trade-Server.exe
             dist/Lumavun-MT5-MCP.exe
             dist/Lumavun-MT5-Gateway.exe
+            dist/trading-office-preview.png
           if-no-files-found: error
           retention-days: 30

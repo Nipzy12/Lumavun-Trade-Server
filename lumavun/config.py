@@ -56,6 +56,10 @@ class Settings:
     mt5_mcp_url: str = "http://127.0.0.1:8765/mcp"
     mt5_native_url: str = "http://127.0.0.1:22346/mcp"
     last_signal_bar: str = ""
+    # Monitoring threshold, not a prediction or guarantee.
+    profit_target_amount: float = 0.0
+    profit_target_period: str = "day"
+    pause_at_profit_target: bool = False
 
     @classmethod
     def load(cls) -> "Settings":

@@ -26,6 +26,7 @@ TIMEFRAME_MINUTES = {"M1": 1, "M5": 5, "M15": 15, "M30": 30,
 READ_TOOLS = frozenset({
     "get_trading_account_info",
     "get_trading_open_positions",
+    "get_trading_history_orders",
     "get_chart_history",
     "get_marketwatch_symbols",
     "list_open_charts",

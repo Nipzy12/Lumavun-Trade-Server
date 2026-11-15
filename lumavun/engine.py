@@ -4,9 +4,20 @@ from .ai import propose_trade
 from .config import Settings
 from .mt5_access import get_candles, preview_order, execute_order
 from .risk import TradeRejected
+from .performance import check_profit_target, HistoryUnavailable
 
 def run_strategy_once() -> dict:
     cfg = Settings.load()
+    if cfg.pause_at_profit_target and cfg.profit_target_amount > 0:
+        try:
+            goal = check_profit_target(cfg)
+        except (HistoryUnavailable, ValueError) as exc:
+            return {"status": "TARGET_CHECK_UNAVAILABLE",
+                    "reason": "Target aktif; riwayat broker tidak dapat diverifikasi: " + str(exc)}
+        if goal["reached"]:
+            return {"status": "TARGET_REACHED", "realized": goal["realized"],
+                    "target": goal["target"], "period": goal["period"],
+                    "reason": "Target tercapai, tidak mengirim order baru."}
     candles = get_candles(cfg.symbol, cfg.timeframe, 60, cfg)
     bar_key = cfg.symbol + ":" + cfg.timeframe + ":" + str(candles[-1]["time"])
     if cfg.last_signal_bar == bar_key:

@@ -16,6 +16,7 @@ from .native_mt5 import inspect_connection
 from .ai import discover_models
 from .engine import run_strategy_once
 from .mt5_access import account_status, list_positions
+from .office import OfficeView
 
 STYLESHEET = """
 QWidget { background:#0c1121; color:#e7e8f5; font-family:'Segoe UI'; font-size:13px; }
@@ -91,6 +92,9 @@ class Window(QMainWindow):
         layout.addWidget(subtitle)
         self.tabs = QTabWidget()
         layout.addWidget(self.tabs, 1)
+        self.office = OfficeView(self)
+        self.office.analyze_requested.connect(self.run_ai)
+        self.tabs.addTab(self.office, "Trading Office")
         self._dashboard()
         self._ai_tab()
         self._strategy_tab()
@@ -362,6 +366,8 @@ class Window(QMainWindow):
         cfg.save()
         self.refresh_mcp_arming()
         self.log("MT5 connection mode saved: " + cfg.mt5_mode)
+        self.office.update_roles()
+        self.office.refresh()
         return True
 
     def test_mcp_connection(self):
@@ -472,6 +478,7 @@ class Window(QMainWindow):
         if self.timer.isActive():
             self.timer.setInterval(cfg.scan_interval_seconds * 1000)
         self.log("Hard risk limits saved.")
+        self.office.update_roles()
 
     def check_mt5(self):
         def show(status):
@@ -486,9 +493,19 @@ class Window(QMainWindow):
     def run_ai(self):
         if self.busy:
             return
+        self.office.update_roles(analyst="Analyzing")
         self.log("Analyzing latest CLOSED candle with configured AI...")
-        self.task(run_strategy_once, lambda result: self.log(
-            json.dumps(result, indent=2, ensure_ascii=False)))
+        self.task(run_strategy_once, self._show_ai_result)
+
+    def _show_ai_result(self, result):
+        self.log(json.dumps(result, indent=2, ensure_ascii=False))
+        status = result.get("status", "")
+        self.office.update_roles(analyst=status or "Ready")
+        if status in ("TARGET_REACHED", "TARGET_CHECK_UNAVAILABLE") and self.timer.isActive():
+            self.timer.stop()
+            self.auto_button.setText("Start Auto Scan")
+            self.log("Auto scan paused by profit-target guard.")
+        self.office.refresh()
 
     def toggle_auto(self):
         if self.timer.isActive():
@@ -518,6 +535,7 @@ class Window(QMainWindow):
         cfg.live_allowed = False
         cfg.save()
         self.refresh_mcp_arming()
+        self.office.update_roles()
         self.log("DEMO order execution armed. LIVE accounts remain blocked.")
 
     def arm_live(self):
@@ -537,6 +555,7 @@ class Window(QMainWindow):
         cfg.live_allowed = True
         cfg.save()
         self.refresh_mcp_arming()
+        self.office.update_roles()
         self.log("WARNING: LIVE order execution is now authorized.")
 
     def disarm(self):
@@ -549,6 +568,7 @@ class Window(QMainWindow):
         self.mcp_orders.setChecked(False)
         self.mcp_orders.blockSignals(False)
         self.refresh_mcp_arming()
+        self.office.update_roles()
         self.log("Execution DISARMED for AI engine and MCP. Existing trades remain open.")
 
     def set_mcp_orders(self, checked):

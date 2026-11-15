@@ -125,3 +125,29 @@ Paste the new token in the client. The old one stops working. API keys are persi
 - Host-side limits (spread, lot, daily loss, allowlist, position limits) are always enforced, regardless of AI provider.
 - The gateway cannot work if MT5 is closed or not logged in, though a transport handshake can still succeed.
 - The gateway stops when its EXE console closes. Do not expose it directly to the public internet.
+
+
+## AI Trading Office dashboard (Windows app)
+
+The first tab is now **Trading Office**. Its workspace/office illustration is drawn directly with Qt (no copied or externally licensed assets). Four visible desks represent the actual software states:
+
+- **AI Analyst**: ready/analyzing/HOLD or trade signal status, sourced from real `run_strategy_once` actions.
+- **Risk Manager**: the configured deterministic limits are active; this is NOT an autonomous AI employee.
+- **Trade Executor**: explicitly disarmed / DEMO armed / LIVE authorized. Built-in MT5 MCP stays read-only.
+- **Performance Desk**: MT5 data loading/ready/connection failure, without fake account values.
+
+**KPIs and report**: MT5 balance, equity, floating position profit, realized trading-deal P&L, count of profitable/losing closing deals, win rate, cumulative realized P&L curve, and transaction journal. Filter UTC periods (today, 7, 30, 90 days). The display stays blank (dash) and reports a connection/history error if the broker data is unavailable. No demo values are invented.
+
+**History source**:
+- Direct local MT5: `history_deals_get(start, end)`. Only broker deal types BUY/SELL with valid symbols are counted, including profit, swap, commissions and fees. Deposits and withdrawals do not count as profit.
+- MT5 built-in MCP: tool `get_trading_history_orders` when it has a recognized time-range schema and returns an executed `deals` list. Different MT5 versions may expose another format; unsupported formats fail visibly instead of showing guessed figures.
+- Legacy LUMAVUN Gateway: no history endpoint is implemented, so journal and target progress report unavailable in that mode.
+
+**Profit target**: save a positive amount in the account currency, choose daily/weekly/monthly UTC reporting, and monitor realized P&L toward the goal. Progress can be negative/zero, or exceed 100% internally, with the meter capped at 100%. A target is **not** a guaranteed return or permission to increase risk.
+
+**Optional stop rule**: tick **Stop auto trading saat target tercapai**. Before an automated AI scan, the engine checks realized broker deal history for that period. If the goal is met, the scan returns `TARGET_REACHED` without new orders. If history cannot be retrieved, it returns `TARGET_CHECK_UNAVAILABLE` and stops the scanning timer instead of trading blind. This does NOT close existing positions or cancel broker orders. If you want to stop order sending immediately, use the Emergency Disarm button as well.
+
+Windows CI builds the executable and renders the real Office QWidget in a headless smoke test. The Windows ZIP includes `trading-office-preview.png` (with placeholder labels rather than fictional account balances).
+
+Design references: [RigelHQ Claude Office](https://github.com/rigel-hq/claude-office) for office/agent-role metaphor; [Scope360](https://scope360.io/) and [MetaTrader 5 trading reports](https://www.metatrader5.com/en/terminal/help/trading_advanced/history_report) for financial KPI grouping and realized/floating separation.
+
