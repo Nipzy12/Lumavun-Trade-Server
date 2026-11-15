@@ -18,8 +18,21 @@ def _api():
     try:
         import MetaTrader5 as mt5
         return mt5
+    except ModuleNotFoundError as exc:
+        missing = exc.name or "unknown"
+        if missing == "MetaTrader5":
+            raise RuntimeError(
+                "MetaTrader5 module was not bundled with the application. "
+                "Download the newest Windows build. Original error: " + str(exc)
+            ) from exc
+        raise RuntimeError(
+            "MetaTrader5 dependency '" + missing + "' is missing: " + str(exc)
+        ) from exc
     except ImportError as exc:
-        raise RuntimeError("MetaTrader5 Python package requires Windows and an installed MT5 terminal") from exc
+        raise RuntimeError(
+            "MetaTrader5 binary/DLL import failed: " + str(exc) +
+            ". On Windows, verify the x64 Visual C++ runtime and use the latest EXE."
+        ) from exc
 
 def _connected():
     mt5 = _api()

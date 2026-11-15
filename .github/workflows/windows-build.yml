@@ -44,6 +44,10 @@ jobs:
           --collect-all keyring --collect-all MetaTrader5
           --hidden-import mcp.server.fastmcp
           mcp_entry.py
+      - name: Smoke test packaged dashboard MT5 imports
+        run: python tests/windows_smoke.py dist/LUMAVUN-Trade-Server.exe
+      - name: Smoke test packaged MCP MT5 imports
+        run: python tests/windows_smoke.py dist/Lumavun-MT5-MCP.exe
       - name: Upload Windows executables
         uses: actions/upload-artifact@v4
         with:
