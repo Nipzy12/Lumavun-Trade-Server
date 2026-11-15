@@ -56,8 +56,10 @@ def _panel():
     frame = QFrame()
     frame.setObjectName("officePanel")
     frame.setStyleSheet(
-        "QFrame#officePanel{background:#111a31;border:1px solid #2d3553;"
-        "border-radius:13px;}"
+        "QFrame#officePanel{background:qlineargradient(x1:0,y1:0,x2:1,y2:1,"
+        "stop:0 #22213f,stop:0.5 #181b35,stop:1 #18142d);"
+        "border:1px solid #69537e;border-top:2px solid #d4a766;"
+        "border-radius:14px;}"
     )
     return frame
 
@@ -65,7 +67,12 @@ class MetricCard(QFrame):
     def __init__(self, label, caption):
         super().__init__()
         self.setMinimumHeight(98)
-        self.setStyleSheet("MetricCard{background:#141e37;border:1px solid #303a5c;border-radius:12px;}")
+        self.setStyleSheet(
+            "MetricCard{background:qlineargradient(x1:0,y1:0,x2:1,y2:1,"
+            "stop:0 #30243f,stop:0.42 #1d1c38,stop:1 #151a35);"
+            "border:1px solid #745c8c;border-bottom:2px solid #a979cd;"
+            "border-radius:12px;}"
+        )
         layout = QVBoxLayout(self)
         layout.setContentsMargins(16, 11, 12, 12)
         layout.setSpacing(4)
@@ -247,16 +254,17 @@ class OfficeView(QWidget):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
-        scroll.setStyleSheet("QScrollArea{border:none;background:#0c1121;}")
+        scroll.setStyleSheet("QScrollArea{border:none;background:#090f21;}")
         contents = QWidget()
-        contents.setStyleSheet("background:#0c1121;")
+        contents.setObjectName("pageCanvas")
+        contents.setStyleSheet("QWidget#pageCanvas{background:#090f21;}")
         v = QVBoxLayout(contents)
         v.setContentsMargins(18, 19, 18, 24)
         v.setSpacing(15)
 
         header = QHBoxLayout()
         headings = QVBoxLayout()
-        headings.addWidget(_label("LUMAVUN  /  AI TRADING OFFICE", INK, 24, True))
+        headings.addWidget(_label("AI TRADING OFFICE  /  EXECUTIVE WORKSPACE", "#f4d59d", 23, True))
         headings.addWidget(_label("A workspace for signals, risk decisions and real MT5 performance.",
                                   MUTED, 11))
         header.addLayout(headings, 1)
@@ -268,7 +276,7 @@ class OfficeView(QWidget):
         self.time_range.currentIndexChanged.connect(lambda *_: self.refresh())
         header.addWidget(self.time_range)
         refresh = QPushButton("↻ Refresh MT5")
-        refresh.setObjectName("muted")
+        refresh.setObjectName("primaryButton")
         refresh.clicked.connect(self.refresh)
         header.addWidget(refresh)
         v.addLayout(header)
@@ -339,9 +347,10 @@ class OfficeView(QWidget):
         self.progress.setValue(0)
         self.progress.setFormat("Belum tersedia")
         self.progress.setStyleSheet(
-            "QProgressBar{background:#283149;color:#edf1fb;border:0;border-radius:6px;"
-            "text-align:center;height:16px;}"
-            "QProgressBar::chunk{background:#9777e9;border-radius:6px;}")
+            "QProgressBar{background:#201832;color:#fff0d4;border:1px solid #7b6099;"
+            "border-radius:7px;text-align:center;min-height:19px;}"
+            "QProgressBar::chunk{background:qlineargradient(x1:0,y1:0,x2:1,y2:0,"
+            "stop:0 #dfa751,stop:1 #a37ce0);border-radius:6px;}")
         gl.addWidget(self.progress)
         gl.addStretch()
         middle.addWidget(goals, 1)
@@ -386,10 +395,10 @@ class OfficeView(QWidget):
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.table.setMinimumHeight(285)
         self.table.setStyleSheet(
-            "QTableWidget{background:#10192b;alternate-background-color:#172139;"
-            "gridline-color:#24314b;border:1px solid #263450;border-radius:6px;}"
-            "QHeaderView::section{background:#242d46;color:#b8c4df;border:0;"
-            "padding:8px;font-weight:bold;}")
+            "QTableWidget{background:#111a31;alternate-background-color:#1a1d38;"
+            "gridline-color:#3e355b;border:1px solid #5e4b7a;border-radius:8px;}"
+            "QHeaderView::section{background:#302545;color:#f6dba9;border:0;"
+            "padding:10px;font-weight:bold;}")
         hv.addWidget(self.table)
         v.addWidget(hist)
         scroll.setWidget(contents)

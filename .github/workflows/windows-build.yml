@@ -30,7 +30,9 @@ jobs:
       - name: Install dependencies and PyInstaller
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -r requirements.txt "pyinstaller>=6,<7"
+          python -m pip install -r requirements.txt "pyinstaller>=6,<7" "pillow>=10,<12"
+      - name: Generate premium LUMAVUN Windows icon
+        run: python scripts/build_icon.py
       - name: Verify native MT5 import BEFORE bundling
         run: >
           python -c "import numpy; import MetaTrader5; print('NumPy', numpy.__version__, 'MT5', MetaTrader5.__version__)"
@@ -40,6 +42,9 @@ jobs:
           --name LUMAVUN-Trade-Server
           --collect-all keyring --collect-all numpy --collect-all MetaTrader5
           --hidden-import mcp.client.streamable_http
+          --icon assets/lumavun.ico
+          --add-data "assets/lumavun.ico;assets"
+          --add-data "assets/lumavun.png;assets"
           main.py
       - name: Build console MCP stdio EXE
         run: >
@@ -61,6 +66,8 @@ jobs:
         run: python tests/windows_smoke.py dist/LUMAVUN-Trade-Server.exe native-mcp
       - name: Smoke test Office UI (frozen EXE + actual widget render)
         run: python tests/windows_office_smoke.py dist/LUMAVUN-Trade-Server.exe
+      - name: Smoke test premium GUI across six tabs and compact viewport
+        run: python tests/windows_premium_smoke.py dist/LUMAVUN-Trade-Server.exe
       - name: Smoke test packaged MCP MT5 imports
         run: python tests/windows_smoke.py dist/Lumavun-MT5-MCP.exe
       - name: Smoke test packaged HTTP Gateway MT5 imports
@@ -71,8 +78,11 @@ jobs:
           name: Lumavun-Trade-Server-Windows
           path: |
             dist/LUMAVUN-Trade-Server.exe
+            assets/lumavun.png
+            assets/lumavun.ico
             dist/Lumavun-MT5-MCP.exe
             dist/Lumavun-MT5-Gateway.exe
             dist/trading-office-preview.png
+            dist/premium-*-preview.png
           if-no-files-found: error
           retention-days: 30

@@ -6,6 +6,9 @@ def main():
     if len(sys.argv) == 3 and sys.argv[1] == "--self-test-mt5":
         from lumavun.diagnostics import self_test_mt5
         return self_test_mt5(sys.argv[2])
+    if len(sys.argv) == 3 and sys.argv[1] == "--self-test-premium-ui":
+        from lumavun.layout_smoke import self_test_premium_ui
+        return self_test_premium_ui(sys.argv[2])
     if len(sys.argv) == 3 and sys.argv[1] == "--self-test-office":
         from lumavun.office_smoke import self_test_office
         return self_test_office(sys.argv[2])

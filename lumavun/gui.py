@@ -2,10 +2,11 @@
 from __future__ import annotations
 import json
 from pathlib import Path
-from PySide6.QtCore import QThread, QTimer, Signal, Qt
+from PySide6.QtCore import QThread, QTimer, Signal, Qt, QSize
+from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QDoubleSpinBox, QFormLayout,
-    QGridLayout, QGroupBox, QHBoxLayout, QInputDialog, QLabel, QLineEdit,
+    QFrame, QGridLayout, QGroupBox, QHBoxLayout, QInputDialog, QLabel, QLineEdit,
     QMainWindow, QMessageBox, QPlainTextEdit, QPushButton, QSpinBox,
     QTabWidget, QVBoxLayout, QWidget,
 )
@@ -17,29 +18,11 @@ from .ai import discover_models
 from .engine import run_strategy_once
 from .mt5_access import account_status, list_positions
 from .office import OfficeView
+from .premium_ui import (
+    STYLESHEET, PremiumPanel, PageScroll, ResponsiveRow, page_hero, spaced_form,
+    hint, make_badge, brand_icon, resource_path,
+)
 
-STYLESHEET = """
-QWidget { background:#0c1121; color:#e7e8f5; font-family:'Segoe UI'; font-size:13px; }
-QMainWindow { background:#0c1121; }
-QLabel#heading { color:#faf8ff; font-size:24px; font-weight:700; }
-QLabel#subtitle { color:#a6adc5; font-size:12px; }
-QGroupBox { border:1px solid #323752; border-radius:9px; margin-top:12px;
-            padding:14px 12px 10px; font-weight:600; }
-QGroupBox::title { subcontrol-origin:margin; left:14px; padding:0 7px; color:#cfc2ff; }
-QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox, QPlainTextEdit {
-  background:#151c30; border:1px solid #3e4563; border-radius:6px;
-  padding:7px; selection-background-color:#6352b9; }
-QPushButton { background:#5142a3; color:#fff; font-weight:600;
-              border:1px solid #6654ba; border-radius:7px; padding:9px 14px; }
-QPushButton:hover { background:#6757c0; }
-QPushButton:disabled { color:#9ca0b0; background:#2b3046; }
-QPushButton#danger { background:#88314f; border-color:#aa4264; }
-QPushButton#muted { background:#222b41; border-color:#394760; }
-QTabWidget::pane { border:1px solid #303751; border-radius:8px; }
-QTabBar::tab { background:#151b30; border:1px solid #303751; padding:11px 17px; }
-QTabBar::tab:selected { background:#413879; }
-QCheckBox { spacing:8px; }
-"""
 class Task(QThread):
     done = Signal(object)
     failed = Signal(str)
@@ -70,8 +53,9 @@ class Window(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("LUMAVUN Trade Server | AI + MT5 MCP")
-        self.setMinimumSize(950, 720)
-        self.resize(1060, 800)
+        self.setMinimumSize(965, 675)
+        self.resize(1390, 860)
+        self.setWindowIcon(brand_icon())
         self.cfg = Settings.load()
         self.tasks = []
         self.busy = False
@@ -81,252 +65,413 @@ class Window(QMainWindow):
 
     def _build(self):
         central = QWidget()
+        central.setObjectName("central")
         self.setCentralWidget(central)
-        layout = QVBoxLayout(central)
-        layout.setContentsMargins(24, 18, 24, 24)
+        root = QVBoxLayout(central)
+        root.setContentsMargins(14, 13, 14, 5)
+        root.setSpacing(9)
+        header = QFrame()
+        header.setObjectName("brandHeader")
+        header_layout = QHBoxLayout(header)
+        header_layout.setContentsMargins(20, 12, 19, 12)
+        header_layout.setSpacing(15)
+        image = QLabel()
+        image.setStyleSheet("background:transparent;border:0;")
+        image.setFixedSize(68, 68)
+        icon = brand_icon()
+        image.setPixmap(icon.pixmap(68, 68))
+        header_layout.addWidget(image)
+        texts = QVBoxLayout()
+        texts.setSpacing(3)
         title = QLabel("LUMAVUN  /  TRADE SERVER")
-        title.setObjectName("heading")
-        layout.addWidget(title)
-        subtitle = QLabel("Windows trading workstation  •  Custom AI  •  MetaTrader 5  •  Local MCP")
-        subtitle.setObjectName("subtitle")
-        layout.addWidget(subtitle)
+        title.setObjectName("brandTitle")
+        texts.addWidget(title)
+        subtitle = QLabel("EXECUTIVE AI TRADING WORKSTATION  •  MetaTrader 5  •  Native MCP")
+        subtitle.setObjectName("brandSubtitle")
+        texts.addWidget(subtitle)
+        header_layout.addLayout(texts, 1)
+        header_layout.addWidget(make_badge("● PREVIEW / SAFE MODE", "warning"))
+        root.addWidget(header)
+
         self.tabs = QTabWidget()
-        layout.addWidget(self.tabs, 1)
+        self.tabs.setDocumentMode(True)
+        self.tabs.tabBar().setUsesScrollButtons(True)
+        self.tabs.tabBar().setExpanding(False)
+        self.tabs.setElideMode(Qt.TextElideMode.ElideRight)
+        root.addWidget(self.tabs, 1)
+
         self.office = OfficeView(self)
         self.office.analyze_requested.connect(self.run_ai)
-        self.tabs.addTab(self.office, "Trading Office")
+        self.tabs.addTab(self.office, "▥  Trading Office")
         self._dashboard()
         self._ai_tab()
         self._strategy_tab()
         self._risk_tab()
         self._mcp_tab()
-        self.statusBar().showMessage("Preview mode by default. No order is sent without explicit arming.")
+        self.statusBar().showMessage(
+            "PREVIEW MODE  •  Orders require explicit permission  •  Native MCP trading is read-only"
+        )
+        self.statusBar().setSizeGripEnabled(False)
 
     def _dashboard(self):
-        page = QWidget()
-        pane = QVBoxLayout(page)
-        status = QGroupBox("MT5 Account / Terminal")
-        status_layout = QVBoxLayout(status)
-        self.connection = QLabel("Not checked. Open and log in to the MT5 desktop terminal.")
+        page = PageScroll(self)
+        page.add(page_hero(
+            "COMMAND CENTER", "Account link, AI analysis and execution controls in one workstation.",
+            "Preview is the default. No trade can be sent until execution is explicitly armed."
+        ))
+        account = PremiumPanel(
+            "01  /  MT5 TERMINAL", "Live account connection status and open position reader.",
+            accent="gold"
+        )
+        self.connection = QLabel("Not checked. Open MetaTrader 5 and connect an account.")
         self.connection.setWordWrap(True)
-        status_layout.addWidget(self.connection)
-        row = QHBoxLayout()
+        self.connection.setMinimumHeight(72)
+        self.connection.setStyleSheet(
+            "color:#cfdbf1; background:#111a33; border:1px solid #47456c;"
+            "border-radius:9px; padding:13px; font-family:Consolas;"
+        )
+        account.layout_body.addWidget(self.connection)
+        account_buttons = QHBoxLayout()
         connect = QPushButton("Check MT5 Connection")
+        connect.setObjectName("primaryButton")
         connect.clicked.connect(self.check_mt5)
-        row.addWidget(connect)
+        account_buttons.addWidget(connect)
         positions = QPushButton("Refresh Positions")
-        positions.setObjectName("muted")
+        positions.setObjectName("secondaryButton")
         positions.clicked.connect(self.check_positions)
-        row.addWidget(positions)
-        status_layout.addLayout(row)
-        pane.addWidget(status)
+        account_buttons.addWidget(positions)
+        account.layout_body.addLayout(account_buttons)
+        account.layout_body.addWidget(hint(
+            "Pilih mode Local MT5, Gateway, atau Native MCP pada tab MT5 MCP."
+        ))
 
-        control = QGroupBox("AI Strategy Control")
-        ctl = QVBoxLayout(control)
-        self.arm_status = QLabel()
-        ctl.addWidget(self.arm_status)
-        row2 = QHBoxLayout()
-        once = QPushButton("Analyze One Closed Candle")
+        control = PremiumPanel(
+            "02  /  AI TRADE OPERATIONS",
+            "Run a one-time closed-candle analysis or manage the automated scanner.",
+            accent="violet"
+        )
+        self.arm_status = make_badge("DISARMED", "warning")
+        control.layout_body.addWidget(self.arm_status)
+        scan_buttons = QHBoxLayout()
+        once = QPushButton("Analyze Closed Candle")
+        once.setObjectName("primaryButton")
         once.clicked.connect(self.run_ai)
-        row2.addWidget(once)
+        scan_buttons.addWidget(once)
         self.auto_button = QPushButton("Start Auto Scan")
-        self.auto_button.setObjectName("muted")
+        self.auto_button.setObjectName("secondaryButton")
         self.auto_button.clicked.connect(self.toggle_auto)
-        row2.addWidget(self.auto_button)
-        ctl.addLayout(row2)
-        row3 = QHBoxLayout()
-        arm = QPushButton("Arm DEMO Execution")
-        self.arm_demo_btn = arm
-        arm.clicked.connect(self.arm_demo)
-        row3.addWidget(arm)
+        scan_buttons.addWidget(self.auto_button)
+        control.layout_body.addLayout(scan_buttons)
+        controls_row = QHBoxLayout()
+        self.arm_demo_btn = QPushButton("Arm DEMO")
+        self.arm_demo_btn.clicked.connect(self.arm_demo)
+        controls_row.addWidget(self.arm_demo_btn)
         self.disarm_btn = QPushButton("EMERGENCY DISARM")
         self.disarm_btn.setObjectName("danger")
         self.disarm_btn.clicked.connect(self.disarm)
-        row3.addWidget(self.disarm_btn)
-        ctl.addLayout(row3)
-        live = QPushButton("Enable LIVE Orders (separate confirmation)")
-        self.arm_live_btn = live
-        live.setObjectName("danger")
-        live.clicked.connect(self.arm_live)
-        ctl.addWidget(live)
-        pane.addWidget(control)
+        controls_row.addWidget(self.disarm_btn)
+        control.layout_body.addLayout(controls_row)
+        self.arm_live_btn = QPushButton("Enable LIVE Orders • Separate Approval")
+        self.arm_live_btn.setObjectName("danger")
+        self.arm_live_btn.clicked.connect(self.arm_live)
+        control.layout_body.addWidget(self.arm_live_btn)
+        control.layout_body.addWidget(hint(
+            "Danger zone: live orders can lose real money. AI cannot override hard risk limits."
+        ))
+        page.add(ResponsiveRow(account, control, 2, 2))
 
-        logs = QGroupBox("Activity / Signal / Order Result")
-        logs_layout = QVBoxLayout(logs)
+        logs = PremiumPanel(
+            "03  /  ACTIVITY & AUDIT LOG", "Signal, risk rejection and MT5 execution results.",
+            accent="violet"
+        )
         self.log_box = QPlainTextEdit()
         self.log_box.setReadOnly(True)
-        self.log_box.setPlaceholderText("AI output, risk rejections and MT5 order results appear here.")
-        logs_layout.addWidget(self.log_box)
-        pane.addWidget(logs, 1)
-        self.tabs.addTab(page, "Dashboard")
+        self.log_box.setMinimumHeight(230)
+        self.log_box.setPlaceholderText(
+            "AI proposal, hard risk validation and order results appear here. "
+            "No mock trades or fabricated account values."
+        )
+        logs.layout_body.addWidget(self.log_box)
+        page.add(logs)
+        page.end()
+        self.tabs.addTab(page, "▦  Dashboard")
         self.update_arm_label()
 
     def _ai_tab(self):
-        page = QWidget()
-        layout = QVBoxLayout(page)
-        group = QGroupBox("Bring Your Own AI")
-        form = QFormLayout(group)
+        page = PageScroll(self)
+        page.add(page_hero(
+            "CUSTOM AI PROVIDERS",
+            "Use a provider model or a private local LLM to analyze closed candles.",
+            "API keys remain in the Windows credential vault; only the selected model receives market data."
+        ))
+        group = PremiumPanel(
+            "01  /  MODEL CONNECTION", "Choose provider, model, endpoint and secure credentials.",
+            accent="gold"
+        )
+        form = spaced_form(group)
         self.provider = QComboBox()
         self.provider.addItems(PROVIDER_URLS.keys())
         self.provider.setCurrentText(self.cfg.provider)
         self.provider.currentTextChanged.connect(self.provider_changed)
-        form.addRow("Provider", self.provider)
+        form.addRow("AI provider", self.provider)
         self.model = QComboBox()
         self.model.setEditable(True)
         self.model.setCurrentText(self.cfg.model)
-        form.addRow("Model ID", self.model)
+        form.addRow("Model identifier", self.model)
         self.base_url = QLineEdit(self.cfg.base_url)
-        self.base_url.setPlaceholderText("Leave blank for default API endpoint")
-        form.addRow("Custom base URL", self.base_url)
+        self.base_url.setPlaceholderText("Optional HTTPS base URL; blank = provider default")
+        form.addRow("Endpoint", self.base_url)
         self.api_key = QLineEdit()
         self.api_key.setEchoMode(QLineEdit.EchoMode.Password)
-        self.api_key.setPlaceholderText("Stored in Windows Credential Manager, not in settings.json")
-        form.addRow("Provider API key", self.api_key)
+        self.api_key.setPlaceholderText("Stored securely in Windows Credential Manager")
+        form.addRow("API key", self.api_key)
+        group.layout_body.addLayout(form)
         buttons = QHBoxLayout()
-        save = QPushButton("Save AI Settings / Key")
+        save = QPushButton("Save Provider Settings")
+        save.setObjectName("primaryButton")
         save.clicked.connect(self.save_ai)
         buttons.addWidget(save)
-        fetch = QPushButton("Fetch Available Models")
-        fetch.setObjectName("muted")
+        fetch = QPushButton("Discover Models")
+        fetch.setObjectName("secondaryButton")
         fetch.clicked.connect(self.load_models)
         buttons.addWidget(fetch)
-        form.addRow(buttons)
-        self.ai_notice = QLabel("OpenAI-compatible providers use /models and /chat/completions. "
-                                "Anthropic, Gemini and Ollama have native adapters.")
-        self.ai_notice.setWordWrap(True)
-        form.addRow(self.ai_notice)
-        layout.addWidget(group)
-        layout.addStretch()
-        self.tabs.addTab(page, "AI Providers")
+        group.layout_body.addLayout(buttons)
+        self.ai_notice = hint(
+            "OpenAI-compatible providers use model IDs. Anthropic, Gemini, Ollama "
+            "and OpenAI Responses have dedicated adapters."
+        )
+        group.layout_body.addWidget(self.ai_notice)
+        guidance = PremiumPanel(
+            "02  /  PROVIDER INSTRUCTIONS",
+            "Safe setup for cloud API or local Ollama models.", accent="violet"
+        )
+        guidance.layout_body.addWidget(hint(
+            "CLOUD API\n"
+            "1. Pilih provider dan simpan API key.\n"
+            "2. Klik Discover Models atau isi model ID manual.\n"
+            "3. Klik Save Provider Settings untuk mengaktifkan model."
+        ))
+        guidance.layout_body.addWidget(hint(
+            "LOCAL OLLAMA\n"
+            "Jalankan Ollama di Windows, pilih Ollama, lalu pilih model lokal.\n"
+            "Default endpoint: http://127.0.0.1:11434/v1"
+        ))
+        guidance.layout_body.addWidget(make_badge("NO API KEY IS LOGGED", "success"))
+        guidance.layout_body.addStretch(1)
+        page.add(ResponsiveRow(group, guidance, 3, 2))
+        page.end()
+        self.tabs.addTab(page, "✧  AI Providers")
 
     def _strategy_tab(self):
-        page = QWidget()
-        layout = QVBoxLayout(page)
-        symbol_row = QHBoxLayout()
-        symbol_row.addWidget(QLabel("Broker Symbol:"))
+        page = PageScroll(self)
+        page.add(page_hero(
+            "STRATEGY WORKBENCH",
+            "Describe the playbook. AI suggests a setup; deterministic safeguards decide what is permitted.",
+            "A saved strategy never arms the trade executor automatically."
+        ))
+        editor = PremiumPanel(
+            "01  /  STRATEGY RULES", "Write instructions in Indonesian or English.",
+            accent="gold"
+        )
+        symbols = QHBoxLayout()
+        symbols.addWidget(QLabel("Broker symbol"))
         self.symbol = QLineEdit(self.cfg.symbol)
-        symbol_row.addWidget(self.symbol)
-        symbol_row.addWidget(QLabel("Timeframe:"))
+        self.symbol.setPlaceholderText("Broker exact name, e.g. XAUUSDm")
+        symbols.addWidget(self.symbol, 2)
+        symbols.addWidget(QLabel("Timeframe"))
         self.timeframe = QComboBox()
         self.timeframe.addItems(("M1", "M5", "M15", "M30", "H1", "H4", "D1"))
         self.timeframe.setCurrentText(self.cfg.timeframe)
-        symbol_row.addWidget(self.timeframe)
-        layout.addLayout(symbol_row)
-        layout.addWidget(QLabel("Strategy instructions (plain Indonesian / English):"))
+        symbols.addWidget(self.timeframe, 1)
+        editor.layout_body.addLayout(symbols)
+        editor.layout_body.addWidget(hint("Natural-language strategy"))
         self.strategy = QPlainTextEdit(self.cfg.strategy)
-        layout.addWidget(self.strategy, 1)
-        btn = QPushButton("Save Strategy")
-        btn.clicked.connect(self.save_strategy)
-        layout.addWidget(btn)
-        note = QLabel("AI evaluates closed candles. A BUY/SELL proposal must pass all deterministic risk checks. "
-                      "A saved strategy does not automatically authorize trading.")
-        note.setWordWrap(True)
-        layout.addWidget(note)
-        self.tabs.addTab(page, "Strategy Editor")
+        self.strategy.setMinimumHeight(310)
+        editor.layout_body.addWidget(self.strategy)
+        save = QPushButton("Save Strategy")
+        save.setObjectName("primaryButton")
+        save.clicked.connect(self.save_strategy)
+        editor.layout_body.addWidget(save)
+
+        help_card = PremiumPanel(
+            "02  /  TRADE PROTOCOL", "How the trade decision moves through the system.",
+            accent="violet"
+        )
+        for step in (
+            "01  MARKET DATA\nClosed OHLC candles from the selected MT5 connection.",
+            "02  AI ANALYST\nOne structured proposal: BUY, SELL or HOLD with SL and TP.",
+            "03  RISK MANAGER\nSpread, lot, equity risk, R:R, allowed symbols and broker limits.",
+            "04  EXECUTOR\nDemo or live orders require explicit user permission.",
+        ):
+            help_card.layout_body.addWidget(hint(step))
+        help_card.layout_body.addWidget(make_badge("NO BYPASS OF RISK GUARD", "success"))
+        help_card.layout_body.addStretch(1)
+        page.add(ResponsiveRow(editor, help_card, 3, 2))
+        page.end()
+        self.tabs.addTab(page, "⌘  Strategy Editor")
 
     def _risk_tab(self):
-        page = QWidget()
-        layout = QVBoxLayout(page)
-        group = QGroupBox("Hard Risk Limits (cannot be overridden by an AI response)")
-        form = QFormLayout(group)
+        page = PageScroll(self)
+        page.add(page_hero(
+            "CAPITAL PROTECTION / RISK GUARD",
+            "Hard limits are enforced outside the AI model before orders can reach MT5.",
+            "The system may reject all trades if the broker's minimum lot exceeds your risk budget."
+        ))
+        group = PremiumPanel(
+            "01  /  POSITION & ACCOUNT LIMITS",
+            "Adjust account-level and per-order safety rules.", accent="gold"
+        )
+        form = spaced_form(group)
         self.allow_symbols = QLineEdit(self.cfg.allow_symbols)
-        form.addRow("Allowed symbols (comma-separated)", self.allow_symbols)
+        self.allow_symbols.setPlaceholderText("XAUUSD, EURUSD, BTCUSD")
+        form.addRow("Allowed symbols", self.allow_symbols)
         self.risk = spin_double(self.cfg.risk_per_trade_pct, 0.01, 2, 0.05)
-        form.addRow("Max risk / trade (% equity)", self.risk)
+        form.addRow("Risk per trade (% equity)", self.risk)
         self.daily_loss = spin_double(self.cfg.max_daily_loss_pct, 0.1, 15, 0.5)
-        form.addRow("Max realized daily loss (% equity)", self.daily_loss)
+        form.addRow("Realized daily loss limit (%)", self.daily_loss)
         self.spread = spin_double(self.cfg.max_spread_points, 1, 10000, 1, 1)
-        form.addRow("Max spread (symbol points)", self.spread)
+        form.addRow("Maximum spread (points)", self.spread)
         self.max_lot = spin_double(self.cfg.max_lot, 0.01, 100, 0.01, 2)
-        form.addRow("Absolute maximum lot", self.max_lot)
+        form.addRow("Maximum position lot", self.max_lot)
         self.max_positions = spin_int(self.cfg.max_positions, 1, 100)
-        form.addRow("Maximum all-account open positions", self.max_positions)
+        form.addRow("Max simultaneous positions", self.max_positions)
         self.max_trades = spin_int(self.cfg.max_trades_day, 1, 100)
-        form.addRow("Maximum bot entries per day", self.max_trades)
+        form.addRow("Max new trades per day", self.max_trades)
         self.scan_interval = spin_int(self.cfg.scan_interval_seconds, 30, 3600)
-        form.addRow("Scan interval (seconds)", self.scan_interval)
-        layout.addWidget(group)
-        save = QPushButton("Save Hard Limits")
+        form.addRow("Scanning interval (seconds)", self.scan_interval)
+        group.layout_body.addLayout(form)
+        save = QPushButton("Save Risk Guard Limits")
+        save.setObjectName("primaryButton")
         save.clicked.connect(self.save_risk)
-        layout.addWidget(save)
-        layout.addWidget(QLabel("Orders require valid SL and TP, minimum 1.5R, current quote, broker order_check, "
-                                "and the broker's own lot minimum. If minimum lot is too large for the risk budget, "
-                                "no order is sent. No guarantee against slippage or gaps."))
-        layout.addStretch()
-        self.tabs.addTab(page, "Risk Guard")
+        group.layout_body.addWidget(save)
+
+        guide = PremiumPanel(
+            "02  /  SAFETY DESK", "Protection stays on even if a model proposes an unsafe trade.",
+            accent="danger"
+        )
+        guide.layout_body.addWidget(make_badge("RISK RULES CANNOT BE OVERRIDDEN", "warning"))
+        for paragraph in (
+            "STOP LOSS + TAKE PROFIT\nA trade without valid levels is rejected.",
+            "EQUITY-SIZED LOT\nVolume is derived from stop distance and broker contract size.",
+            "PRICE VALIDITY\nFresh quotes, spread cap, order_check and filling rules are required.",
+            "DAILY LIMITS\nRealized loss and maximum number of entries prevent overtrading.",
+            "ACCOUNT AUTHORIZATION\nDemo vs. live order permission is checked independently.",
+        ):
+            guide.layout_body.addWidget(hint(paragraph))
+        guide.layout_body.addStretch(1)
+        page.add(ResponsiveRow(group, guide, 3, 2))
+        page.end()
+        self.tabs.addTab(page, "⬡  Risk Guard")
 
     def _mcp_tab(self):
-        page = QWidget()
-        layout = QVBoxLayout(page)
-        group = QGroupBox("MCP Server for External AI Agents")
-        inner = QVBoxLayout(group)
-        inner.addWidget(QLabel("Pilih Native MetaTrader 5 MCP untuk menggunakan SERVER dan API KEY dari MT5 → Options → MCP.\n"
-                               "Server MCP bawaan MT5 berbeda dari Gateway LUMAVUN (opsional).\n"
-                               "Kunci tidak pernah disimpan di pengaturan biasa."))
-        connection = QGroupBox("MT5 Connection: Local Terminal or Internal MCP Server")
-        form = QFormLayout(connection)
+        page = PageScroll(self)
+        page.add(page_hero(
+            "MT5 MCP / CONNECTIVITY HUB",
+            "Connect to MetaTrader 5 native MCP using its internal URL and API key.",
+            "Native MT5 MCP is read-only for automated trading. The optional LUMAVUN gateway uses separate credentials."
+        ))
+
+        connection = PremiumPanel(
+            "01  /  MT5 CONNECTION", "Choose an existing local terminal or native MCP transport.",
+            accent="gold"
+        )
+        form = spaced_form(connection)
         self.mt5_mode = QComboBox()
-        self.mt5_mode.addItem("Local MT5 Terminal", "local")
-        self.mt5_mode.addItem("LUMAVUN HTTP Gateway (legacy)", "mcp_http")
-        self.mt5_mode.addItem("MetaTrader 5 Native MCP (built-in)", "mt5_native")
-        self.mt5_mode.setCurrentIndex(2 if self.cfg.mt5_mode == "mt5_native" else
-                                      1 if self.cfg.mt5_mode == "mcp_http" else 0)
+        self.mt5_mode.addItem("Local MT5 Terminal (Python)", "local")
+        self.mt5_mode.addItem("LUMAVUN Gateway (legacy HTTP)", "mcp_http")
+        self.mt5_mode.addItem("MetaTrader 5 Built-in MCP", "mt5_native")
+        self.mt5_mode.setCurrentIndex(
+            2 if self.cfg.mt5_mode == "mt5_native" else
+            1 if self.cfg.mt5_mode == "mcp_http" else 0
+        )
         self.mt5_mode.currentIndexChanged.connect(self.connection_mode_changed)
         form.addRow("Connection mode", self.mt5_mode)
-        self.mt5_url = QLineEdit(self.cfg.mt5_native_url if self.cfg.mt5_mode == "mt5_native"
-                                 else self.cfg.mt5_mcp_url)
+        self.mt5_url = QLineEdit(
+            self.cfg.mt5_native_url if self.cfg.mt5_mode == "mt5_native"
+            else self.cfg.mt5_mcp_url
+        )
         self.mt5_url.setPlaceholderText("http://127.0.0.1:22346/mcp")
         form.addRow("MCP server URL", self.mt5_url)
         self.mt5_remote_key = QLineEdit()
         self.mt5_remote_key.setEchoMode(QLineEdit.EchoMode.Password)
-        self.mt5_remote_key.setPlaceholderText("API key dari MT5 → Options → MCP (atau Gateway jika dipilih)")
-        form.addRow("MCP API Key", self.mt5_remote_key)
+        self.mt5_remote_key.setPlaceholderText("Paste MT5 Options → MCP API key")
+        form.addRow("MCP API key", self.mt5_remote_key)
+        connection.layout_body.addLayout(form)
         buttons = QHBoxLayout()
         save = QPushButton("Save Connection")
+        save.setObjectName("primaryButton")
         save.clicked.connect(self.save_mt5_connection)
         buttons.addWidget(save)
         test = QPushButton("Test MCP Connection")
-        test.setObjectName("muted")
+        test.setObjectName("secondaryButton")
         test.clicked.connect(self.test_mcp_connection)
         buttons.addWidget(test)
-        form.addRow(buttons)
-        note = QLabel("Untuk mode Native, aktifkan 'server internal' di tab MCP MT5, salin Alamat dan Kunci API, "
-                      "klik OK pada MT5, lalu Test MCP Connection. Tampilkan daftar tool untuk memeriksa kontrak "
-                      "yang disediakan server. Auto-order lewat MCP native belum diaktifkan sampai validasi risikonya lengkap.")
-        note.setWordWrap(True)
-        form.addRow(note)
-        inner.addWidget(connection)
-        inner.addWidget(QLabel("Discovered Native MetaTrader Tools (read-only display):"))
+        connection.layout_body.addLayout(buttons)
+        self.mcp_link_status = make_badge("● NOT TESTED", "warning")
+        connection.layout_body.addWidget(self.mcp_link_status)
+        connection.layout_body.addWidget(hint(
+            "Di MetaTrader 5: Peralatan → Pilihan → MCP → Aktifkan server internal → "
+            "salin Alamat + Kunci API → klik OK. Gunakan API key baru jika pernah terlihat di screenshot."
+        ))
+
+        discovered = PremiumPanel(
+            "02  /  DISCOVERED MT5 TOOLS",
+            "Live tool discovery is read-only. Tool names are obtained from the connected server.",
+            accent="violet"
+        )
         self.native_tools_preview = QPlainTextEdit()
         self.native_tools_preview.setReadOnly(True)
-        self.native_tools_preview.setMinimumHeight(170)
-        self.native_tools_preview.setPlaceholderText("Test MCP Connection untuk menampilkan daftar tool MT5 native.")
-        inner.addWidget(self.native_tools_preview)
-        self.mcp_orders = QCheckBox("Allow external MCP clients to place risk-checked orders when execution is armed")
+        self.native_tools_preview.setMinimumHeight(250)
+        self.native_tools_preview.setPlaceholderText(
+            "Belum ada data. Klik Test MCP Connection untuk menemukan tool MetaTrader 5 native."
+        )
+        discovered.layout_body.addWidget(self.native_tools_preview)
+        discovered.layout_body.addWidget(make_badge("NATIVE MCP: READ-ONLY ORDERS", "warning"))
+        discovered.layout_body.addStretch(1)
+        page.add(ResponsiveRow(connection, discovered, 3, 2))
+
+        permissions = PremiumPanel(
+            "03  /  EXTERNAL MCP PERMISSIONS",
+            "A separate permission applies only when running the LUMAVUN-owned MCP tools.",
+            accent="danger"
+        )
+        self.mcp_orders = QCheckBox(
+            "Allow trusted external MCP clients to request guarded orders when execution is armed"
+        )
         self.mcp_orders.setChecked(self.cfg.allow_mcp_orders)
         self.mcp_orders.toggled.connect(self.set_mcp_orders)
-        inner.addWidget(self.mcp_orders)
-        inner.addWidget(QLabel("Example client configuration (replace the file path):"))
-        sample = {
-            "mcpServers": {
-                "lumavun-mt5": {
-                    "command": r"C:\LUMAVUN\Lumavun-MT5-MCP.exe",
-                    "args": []
-                }
-            }
-        }
-        example = QPlainTextEdit(json.dumps(sample, indent=2))
-        example.setReadOnly(True)
-        example.setMinimumHeight(140)
-        inner.addWidget(example)
-        inner.addWidget(QLabel("Available tools: mt5_account, mt5_positions, mt5_candles,\n"
-                               "mt5_order_preview, mt5_place_order. Trading is OFF by default."))
-        layout.addWidget(group)
-        layout.addStretch()
-        self.tabs.addTab(page, "MT5 MCP")
+        permissions.layout_body.addWidget(self.mcp_orders)
+        permissions.layout_body.addWidget(hint(
+            "Changing this permission does NOT unlock automatic orders in MetaTrader 5 native MCP mode. "
+            "All execution still requires account-mode approval and risk checks."
+        ))
+        page.add(permissions)
+
+        sample_panel = PremiumPanel(
+            "04  /  CLIENT CONFIGURATION",
+            "Example for third-party AI MCP clients. Use the installed EXE path on this computer.",
+            accent="gold"
+        )
+        sample = {"mcpServers":{"lumavun-mt5":{
+            "command":r"C:\LUMAVUN\Lumavun-MT5-MCP.exe","args":[]}}}
+        code = QPlainTextEdit(json.dumps(sample, indent=2, ensure_ascii=False))
+        code.setReadOnly(True)
+        code.setMinimumHeight(200)
+        sample_panel.layout_body.addWidget(code)
+        sample_panel.layout_body.addWidget(hint(
+            "LUMAVUN MCP tools: mt5_account • mt5_positions • mt5_candles • "
+            "mt5_order_preview • mt5_place_order. They are distinct from MetaTrader native tools."
+        ))
+        page.add(sample_panel)
+        page.end()
+        self.tabs.addTab(page, "◇  MT5 MCP")
         self.refresh_mcp_arming()
 
     def connection_mode_changed(self):
+        self.mcp_link_status.setText("● NOT TESTED")
+        self.mcp_link_status.setProperty("mode", "warning")
+        self.mcp_link_status.style().unpolish(self.mcp_link_status)
+        self.mcp_link_status.style().polish(self.mcp_link_status)
         mode = self.mt5_mode.currentData()
         cfg = Settings.load()
         self.mt5_url.setText(cfg.mt5_native_url if mode == "mt5_native" else cfg.mt5_mcp_url)
@@ -365,6 +510,10 @@ class Window(QMainWindow):
             cfg.live_allowed = False
         cfg.save()
         self.refresh_mcp_arming()
+        self.mcp_link_status.setText("● SAVED / NOT TESTED")
+        self.mcp_link_status.setProperty("mode", "warning")
+        self.mcp_link_status.style().unpolish(self.mcp_link_status)
+        self.mcp_link_status.style().polish(self.mcp_link_status)
         self.log("MT5 connection mode saved: " + cfg.mt5_mode)
         self.office.update_roles()
         self.office.refresh()
@@ -383,11 +532,19 @@ class Window(QMainWindow):
                               for x in info["tools"]))
                 if info.get("account"):
                     self.connection.setText(json.dumps(info["account"], indent=2, ensure_ascii=False))
+                self.mcp_link_status.setText("● CONNECTED / " + str(info["total_tools"]) + " TOOLS")
+                self.mcp_link_status.setProperty("mode", "success")
+                self.mcp_link_status.style().unpolish(self.mcp_link_status)
+                self.mcp_link_status.style().polish(self.mcp_link_status)
                 self.log("Native MT5 MCP connected: " + str(info["total_tools"]) + " tools found (read-only).")
             self.task(lambda: inspect_connection(Settings.load()), report_native)
             return
         def report_gateway(status):
             self.connection.setText(json.dumps(status, indent=2))
+            self.mcp_link_status.setText("● GATEWAY CONNECTED")
+            self.mcp_link_status.setProperty("mode", "success")
+            self.mcp_link_status.style().unpolish(self.mcp_link_status)
+            self.mcp_link_status.style().polish(self.mcp_link_status)
             self.log("Authenticated LUMAVUN MCP Gateway connected (" +
                      ("DEMO" if status.get("demo") is True else "LIVE/UNKNOWN") + ")")
         self.task(lambda: gateway_call("mt5_account", {}, Settings.load()), report_gateway)
@@ -408,6 +565,11 @@ class Window(QMainWindow):
             on_done(result)
         def fail(error):
             self.busy = False
+            if self.tabs.currentIndex() == 5:
+                self.mcp_link_status.setText("● CONNECTION ERROR")
+                self.mcp_link_status.setProperty("mode", "danger")
+                self.mcp_link_status.style().unpolish(self.mcp_link_status)
+                self.mcp_link_status.style().polish(self.mcp_link_status)
             self.log("ERROR: " + error)
         def cleanup():
             self.tasks.remove(t)
@@ -598,6 +760,10 @@ class Window(QMainWindow):
 
 def main():
     app = QApplication([])
+    app.setApplicationName("LUMAVUN Trade Server")
+    app.setOrganizationName("LUMAVUN")
+    app.setStyle("Fusion")
+    app.setWindowIcon(brand_icon())
     app.setStyleSheet(STYLESHEET)
     win = Window()
     win.show()

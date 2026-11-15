@@ -127,6 +127,24 @@ Paste the new token in the client. The old one stops working. API keys are persi
 - The gateway stops when its EXE console closes. Do not expose it directly to the public internet.
 
 
+
+## Premium glossy desktop UI (latest)
+
+The LUMAVUN desktop GUI has a consistent **midnight navy / indigo / mist violet / lunar gold** hard-surface design system.
+
+- **All six tabs restyled:** Trading Office, Dashboard, AI Providers, Strategy Editor, Risk Guard, MT5 MCP.
+- **MT5 MCP clipping fixed:** a new scrollable page, flexible two-column cards (connection + discovered tools), separate permissions and client settings. Form fields retain usable heights even at 965 × 675. Connection mode, server URL, API key, Save and Test remain native working controls.
+- **Premium application artwork:** \`assets/lumavun.png\` is generated from the LUMAVUN moon/star/trading motif. \`scripts/build_icon.py\` converts it to \`assets/lumavun.ico\` on Windows; PyInstaller embeds it as the main EXE's icon. The Qt app header/window/taskbar use it as well.
+- **No fake 'Connected' label:** server status becomes connected only after an authenticated tool discovery and account-info check. Native MCP is still read-only for auto-trading.
+- **Responsive layout:** panels stack in smaller workspaces and scroll rather than compressing inputs.
+- **No trading logic changed by the theme.** The previous risk engine, API key storage, native MCP permissions and broker-data-only P&L remain intact.
+
+### Visual regression checks
+
+GitHub Windows Actions renders all six real Qt tabs without a broker, checks that the three MT5 MCP connection fields do not overlap and maintain usable dimensions, verifies vertical scrolling at 1366 × 768 and 965 × 675, and validates that the packaged EXE contains the premium icon. It uploads \`premium-*-preview.png\` screenshots alongside both MCP and main EXE tools.
+
+App styling and icon resource lookup are implemented in \`lumavun/premium_ui.py\`. UI smoke is implemented in \`lumavun/layout_smoke.py\`. **Do not paste API keys into screenshots or repository issues.**
+
 ## AI Trading Office dashboard (Windows app)
 
 The first tab is now **Trading Office**. Its workspace/office illustration is drawn directly with Qt (no copied or externally licensed assets). Four visible desks represent the actual software states:

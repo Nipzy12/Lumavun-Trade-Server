@@ -14,7 +14,7 @@ def self_test_office(report_path: str) -> int:
     try:
         app = QApplication.instance() or QApplication([])
         win = Window()
-        assert win.tabs.tabText(0) == "Trading Office"
+        assert win.tabs.tabText(0).endswith("Trading Office")
         assert "balance" in win.office.cards
         assert "realized" in win.office.cards
         assert win.office.target_amount.minimum() == 0

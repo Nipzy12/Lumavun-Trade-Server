@@ -17,6 +17,6 @@ data = json.loads(report.read_text(encoding="utf-8"))
 print(data)
 assert result.returncode == 0 and data["ok"], data
 assert data["frozen"] is True
-assert data["first_tab"] == "Trading Office"
+assert data["first_tab"].endswith("Trading Office")
 assert data["preview_bytes"] > 1000
 assert (exe.parent / data["preview"]).is_file()
