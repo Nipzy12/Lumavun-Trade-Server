@@ -2,12 +2,12 @@
 from __future__ import annotations
 from .ai import propose_trade
 from .config import Settings
-from .mt5_bridge import get_candles, preview_order, execute_order
+from .mt5_access import get_candles, preview_order, execute_order
 from .risk import TradeRejected
 
 def run_strategy_once() -> dict:
     cfg = Settings.load()
-    candles = get_candles(cfg.symbol, cfg.timeframe, 60)
+    candles = get_candles(cfg.symbol, cfg.timeframe, 60, cfg)
     bar_key = cfg.symbol + ":" + cfg.timeframe + ":" + str(candles[-1]["time"])
     if cfg.last_signal_bar == bar_key:
         return {"status": "SKIP", "reason": "Already evaluated the latest closed candle"}

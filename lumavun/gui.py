@@ -10,9 +10,11 @@ from PySide6.QtWidgets import (
     QTabWidget, QVBoxLayout, QWidget,
 )
 from .config import Settings, PROVIDER_URLS, put_api_key
+from .gateway_auth import save_remote_key, validate_endpoint
+from .mt5_access import gateway_call
 from .ai import discover_models
 from .engine import run_strategy_once
-from .mt5_bridge import account_status, list_positions
+from .mt5_access import account_status, list_positions
 
 STYLESHEET = """
 QWidget { background:#0c1121; color:#e7e8f5; font-family:'Segoe UI'; font-size:13px; }
@@ -252,8 +254,37 @@ class Window(QMainWindow):
         group = QGroupBox("MCP Server for External AI Agents")
         inner = QVBoxLayout(group)
         inner.addWidget(QLabel("Transport: stdio. The second Windows executable is a local MCP tool server.\n"
-                               "No network port, cloud credential, or MT5 password is needed.\n"
-                               "MT5 must be installed and logged in on this Windows machine."))
+                               "stdio is still supported with Lumavun-MT5-MCP.exe.\n"
+                               "The new HTTP Gateway runs on the Windows PC with MT5; its own key is not a broker password."))
+        connection = QGroupBox("MT5 Connection: Local Terminal or Internal MCP Server")
+        form = QFormLayout(connection)
+        self.mt5_mode = QComboBox()
+        self.mt5_mode.addItem("Local MT5 Terminal", "local")
+        self.mt5_mode.addItem("Internal MCP Gateway (URL + API Key)", "mcp_http")
+        self.mt5_mode.setCurrentIndex(1 if self.cfg.mt5_mode == "mcp_http" else 0)
+        form.addRow("Connection mode", self.mt5_mode)
+        self.mt5_url = QLineEdit(self.cfg.mt5_mcp_url)
+        self.mt5_url.setPlaceholderText("http://127.0.0.1:8765/mcp or HTTPS gateway address")
+        form.addRow("MCP server URL", self.mt5_url)
+        self.mt5_remote_key = QLineEdit()
+        self.mt5_remote_key.setEchoMode(QLineEdit.EchoMode.Password)
+        self.mt5_remote_key.setPlaceholderText("Gateway-generated key, saved in Windows Credential Manager")
+        form.addRow("MCP API Key", self.mt5_remote_key)
+        buttons = QHBoxLayout()
+        save = QPushButton("Save Connection")
+        save.clicked.connect(self.save_mt5_connection)
+        buttons.addWidget(save)
+        test = QPushButton("Test MCP Connection")
+        test.setObjectName("muted")
+        test.clicked.connect(self.test_mcp_connection)
+        buttons.addWidget(test)
+        form.addRow(buttons)
+        note = QLabel("Start Lumavun-MT5-Gateway.exe on the PC running MT5. "
+                      "Copy its MCP URL and its generated API key here. "
+                      "Remote network access must use HTTPS or a localhost SSH tunnel.")
+        note.setWordWrap(True)
+        form.addRow(note)
+        inner.addWidget(connection)
         self.mcp_orders = QCheckBox("Allow external MCP clients to place risk-checked orders when execution is armed")
         self.mcp_orders.setChecked(self.cfg.allow_mcp_orders)
         self.mcp_orders.toggled.connect(self.set_mcp_orders)
@@ -276,6 +307,33 @@ class Window(QMainWindow):
         layout.addWidget(group)
         layout.addStretch()
         self.tabs.addTab(page, "MT5 MCP")
+
+    def save_mt5_connection(self):
+        cfg = Settings.load()
+        cfg.mt5_mode = self.mt5_mode.currentData()
+        cfg.mt5_mcp_url = self.mt5_url.text().strip()
+        try:
+            if cfg.mt5_mode == "mcp_http":
+                cfg.mt5_mcp_url = validate_endpoint(cfg.mt5_mcp_url)
+            if self.mt5_remote_key.text().strip():
+                save_remote_key(self.mt5_remote_key.text())
+                self.mt5_remote_key.clear()
+        except Exception as exc:
+            self.log("Invalid MCP connection: " + str(exc))
+            return False
+        cfg.save()
+        self.log("MT5 connection mode saved: " + ("MCP Gateway" if cfg.mt5_mode == "mcp_http" else "Local Terminal"))
+        return True
+
+    def test_mcp_connection(self):
+        self.mt5_mode.setCurrentIndex(1)
+        if not self.save_mt5_connection():
+            return
+        def report(status):
+            self.connection.setText(json.dumps(status, indent=2))
+            self.log("Authenticated MCP Gateway connection succeeded (" +
+                     ("DEMO" if status["demo"] else "LIVE") + ")")
+        self.task(lambda: gateway_call("mt5_account", {}, Settings.load()), report)
 
     def log(self, msg):
         self.log_box.appendPlainText(str(msg))
@@ -368,10 +426,10 @@ class Window(QMainWindow):
         def show(status):
             self.connection.setText(json.dumps(status, indent=2))
             self.log("MT5 connection checked (" + ("DEMO" if status["demo"] else "LIVE") + ")")
-        self.task(account_status, show)
+        self.task(lambda: account_status(Settings.load()), show)
 
     def check_positions(self):
-        self.task(list_positions, lambda positions: self.log(
+        self.task(lambda: list_positions(Settings.load()), lambda positions: self.log(
             "Positions: " + json.dumps(positions, ensure_ascii=False)))
 
     def run_ai(self):

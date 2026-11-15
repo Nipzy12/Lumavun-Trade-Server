@@ -52,6 +52,8 @@ class Settings:
     execution_enabled: bool = False
     live_allowed: bool = False
     allow_mcp_orders: bool = False
+    mt5_mode: str = "local"
+    mt5_mcp_url: str = "http://127.0.0.1:8765/mcp"
     last_signal_bar: str = ""
 
     @classmethod

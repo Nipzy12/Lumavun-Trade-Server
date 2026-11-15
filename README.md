@@ -67,3 +67,46 @@ To run the MCP executable from source:
 Architecture: desktop GUI -> AI strategy engine -> LLM JSON proposal -> deterministic risk gate -> local MT5 terminal. External MCP clients use the same gate. Only one order-send function can reach MT5.
 
 Known limits: no backtester, news calendar filter, guaranteed execution, unattended Windows service, or floating-equity-based daily loss lock. Daily loss uses realized P/L from MT5. Strategy prompts are not validated for predictive quality, and API billing belongs to the chosen provider. Do not run an external MCP client you do not trust.
+
+
+## New: HTTP MCP Gateway using an internal URL and API key
+
+**MT5 does not have a built-in MCP API key.** The broker trading server name is NOT an MCP URL. LUMAVUN generates its own gateway API key in the Windows credential vault. Keep the broker terminal logged in locally; never send an MT5 account password to a remote LUMAVUN desktop.
+
+New Windows ZIP contains THREE programs:
+- **LUMAVUN-Trade-Server.exe**: Desktop trading dashboard and MCP URL/API key configuration.
+- **Lumavun-MT5-MCP.exe**: Existing MCP stdio server for local MCP clients.
+- **Lumavun-MT5-Gateway.exe**: New HTTP Streamable MCP server exposing the same risk-checked MT5 tools.
+
+### Same Windows PC (recommended first)
+
+1. Open MT5, log into a demo account, leave MT5 running.
+2. Start Lumavun-MT5-Gateway.exe. It creates an independent 256-bit API token and prints:
+   - MCP URL: `http://127.0.0.1:8765/mcp`
+   - MCP API KEY: `luma_...` (your unique token).
+3. Keep the gateway terminal running, open LUMAVUN-Trade-Server.exe.
+4. Go to **MT5 MCP** tab, set **Internal MCP Gateway**, paste the URL and API key and click **Save Connection**.
+5. Click **Test MCP Connection**; a successful demo connection reports account server and equity.
+6. Use Dashboard **Check MT5 Connection**, and then Strategy Editor as before. Sending orders remains disabled until both the local dashboard AND the gateway host have appropriate permissions. The gateway uses the existing **execution_enabled, live_allowed, allow_mcp_orders** settings on the gateway Windows host, and its risk guard cannot be bypassed by an API call.
+
+### Access across two computers
+
+For access outside the gateway PC, use an **encrypted tunnel** (SSH/VPN with localhost forwarding) or expose the gateway through TLS with a trusted certificate:
+
+    Lumavun-MT5-Gateway.exe --bind 192.168.1.20 --public-host 192.168.1.20 --certfile C:\secure\server-cert.pem --keyfile C:\secure\server-key.pem
+
+The certificate must be trusted on the LUMAVUN client and its subjectAltName must include the IP/hostname being used. Then enter `https://192.168.1.20:8765/mcp` on the client. Configure Windows Firewall to permit *only trusted machines* to connect. The gateway refuses non-loopback listening without TLS and does not allow browser Origins. Plain `http://192.168.x.x` is intentionally blocked to protect the bearer key.
+
+To rotate the gateway key, stop the gateway, then restart with:
+
+    Lumavun-MT5-Gateway.exe --rotate-key
+
+Paste the new token in the client. The old one stops working. API keys are persisted in Windows Credential Manager, and are never stored in settings.json.
+
+### Limits and trade safety
+
+- MCP Gateway must run on the same Windows host as the MT5 terminal. It is not a replacement for the broker's server.
+- Trading permissions are independently checked by the client and host. Demo testing first. LIVE needs separate host and client confirmations.
+- Host-side limits (spread, lot, daily loss, allowlist, position limits) are always enforced, regardless of AI provider.
+- The gateway cannot work if MT5 is closed or not logged in, though a transport handshake can still succeed.
+- The gateway stops when its EXE console closes. Do not expose it directly to the public internet.
