@@ -22,6 +22,8 @@ jobs:
   build-windows:
     needs: tests
     runs-on: windows-latest
+    env:
+      PYTHONIOENCODING: utf-8
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

@@ -14,7 +14,7 @@ result = subprocess.run([str(exe), "--self-test-office", str(report)],
                         capture_output=True, text=True, timeout=120, env=env)
 assert report.is_file(), f"No GUI report. Exit {result.returncode} {result.stderr}"
 data = json.loads(report.read_text(encoding="utf-8"))
-print(data)
+print(json.dumps(data, ensure_ascii=True))
 assert result.returncode == 0 and data["ok"], data
 assert data["frozen"] is True
 assert data["first_tab"].endswith("Trading Office")
