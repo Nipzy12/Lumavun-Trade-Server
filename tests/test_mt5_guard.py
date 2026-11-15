@@ -23,3 +23,16 @@ def test_mcp_cannot_send_without_separate_permission(monkeypatch, tmp_path):
     monkeypatch.setattr(Settings, "load", classmethod(lambda cls: Settings(execution_enabled=True, allow_mcp_orders=False)))
     with pytest.raises(TradeRejected, match="MCP order"):
         mt5_bridge.execute_order(OrderIntent("XAUUSD", "BUY", 3990, 4020), from_mcp=True)
+
+def test_mt5_dll_import_failure_includes_original_diagnostic(monkeypatch):
+    import builtins
+    real_import = builtins.__import__
+
+    def broken_mt5_import(name, *args, **kwargs):
+        if name == "MetaTrader5":
+            raise ImportError("DLL load failed while importing _core: The specified module could not be found")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", broken_mt5_import)
+    with pytest.raises(RuntimeError, match="DLL load failed"):
+        mt5_bridge._api()
