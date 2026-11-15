@@ -39,6 +39,7 @@ jobs:
           python -m PyInstaller --noconfirm --clean --onefile --windowed
           --name LUMAVUN-Trade-Server
           --collect-all keyring --collect-all numpy --collect-all MetaTrader5
+          --hidden-import mcp.client.streamable_http
           main.py
       - name: Build console MCP stdio EXE
         run: >
@@ -56,6 +57,8 @@ jobs:
           gateway_entry.py
       - name: Smoke test packaged dashboard MT5 imports
         run: python tests/windows_smoke.py dist/LUMAVUN-Trade-Server.exe
+      - name: Smoke test packaged dashboard native MCP client
+        run: python tests/windows_smoke.py dist/LUMAVUN-Trade-Server.exe native-mcp
       - name: Smoke test packaged MCP MT5 imports
         run: python tests/windows_smoke.py dist/Lumavun-MT5-MCP.exe
       - name: Smoke test packaged HTTP Gateway MT5 imports

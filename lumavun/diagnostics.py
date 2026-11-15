@@ -33,3 +33,26 @@ def self_test_mt5(report_path: str) -> int:
         status = 2
     Path(report_path).write_text(json.dumps(report, indent=2), encoding="utf-8")
     return status
+
+def self_test_native_mcp(report_path: str) -> int:
+    """Validate that frozen dashboard includes MCP Streamable HTTP client."""
+    try:
+        from mcp import ClientSession
+        from mcp.client.streamable_http import streamablehttp_client
+        report = {
+            "ok": True,
+            "module": "mcp.client.streamable_http",
+            "client_session": ClientSession.__name__,
+            "frozen": bool(getattr(sys, "frozen", False)),
+        }
+        status = 0
+    except Exception as exc:
+        report = {
+            "ok": False,
+            "error_type": type(exc).__name__,
+            "error": str(exc),
+            "frozen": bool(getattr(sys, "frozen", False)),
+        }
+        status = 2
+    Path(report_path).write_text(json.dumps(report, indent=2), encoding="utf-8")
+    return status
