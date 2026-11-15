@@ -25,6 +25,30 @@ def self_test_office(report_path: str) -> int:
         picture = report_file.with_name("trading-office-preview.png")
         if pixmap.isNull() or not pixmap.save(str(picture)):
             raise RuntimeError("Could not render AI Trading Office preview")
+        # Render the actual journal and target widgets using test-only data;
+        # screenshot above intentionally contains no fictional account figures.
+        synthetic = {
+            "account": {"server": "CI-SIMULATION", "login": 999,
+                        "currency": "USD", "demo": True,
+                        "balance": 100.0, "equity": 102.0},
+            "history_available": True, "history_error": None,
+            "history": {"realized": 2.0, "wins": 1, "losses": 0,
+                        "win_rate": 100.0, "deals": [
+                            {"time": 1732000000, "ticket": "1",
+                             "symbol": "TEST", "side": "BUY",
+                             "volume": 0.01, "net": 2.0, "is_exit": True}]},
+            "floating": 2.0, "target_amount": 10.0,
+            "target_realized": 2.0, "target_reached": False,
+            "target_period": "day", "progress": 20.0,
+            "updated_at": "2026-11-16T00:00:00+00:00",
+            "window_days": 7
+        }
+        win.office._show_snapshot(synthetic)
+        assert win.office.table.rowCount() == 1
+        assert win.office.cards["balance"].value.text() == "100.00 USD"
+        assert win.office.progress.value() == 20
+        win.office._show_error("CI preview cleared")
+
         report = {"ok": True, "tabs": win.tabs.count(),
                   "first_tab": win.tabs.tabText(0),
                   "preview": picture.name, "preview_bytes": picture.stat().st_size,

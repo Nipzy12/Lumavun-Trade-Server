@@ -11,7 +11,7 @@ from collections import defaultdict
 import math
 
 from PySide6.QtCore import Qt, QRectF, QPointF, QThread, Signal, QTimer
-from PySide6.QtGui import QColor, QFont, QPainter, QPen, QPolygonF
+from PySide6.QtGui import QColor, QBrush, QFont, QPainter, QPen, QPolygonF
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QDoubleSpinBox, QFrame, QGridLayout, QHBoxLayout,
     QLabel, QProgressBar, QPushButton, QScrollArea, QTableWidget, QTableWidgetItem,
@@ -235,6 +235,10 @@ class OfficeView(QWidget):
         self._build()
         self.update_roles()
         if os.environ.get("LUMAVUN_OFFICE_SMOKE") != "1":
+            self.live_refresh = QTimer(self)
+            self.live_refresh.setInterval(60_000)
+            self.live_refresh.timeout.connect(self.refresh)
+            self.live_refresh.start()
             QTimer.singleShot(500, self.refresh)
 
     def _build(self):
@@ -517,5 +521,5 @@ class OfficeView(QWidget):
             for j,value in enumerate(parts):
                 cell=QTableWidgetItem(str(value))
                 if j==6:
-                    cell.setForeground(QColor(_tint(d["net"])))
+                    cell.setForeground(QBrush(QColor(_tint(d["net"]))))
                 self.table.setItem(i,j,cell)
