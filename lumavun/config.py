@@ -55,6 +55,9 @@ class Settings:
     mt5_mode: str = "local"  # local | mcp_http (LUMAVUN Gateway) | mt5_native
     mt5_mcp_url: str = "http://127.0.0.1:8765/mcp"
     mt5_native_url: str = "http://127.0.0.1:22346/mcp"
+    # Explicit opt-in to read closed candles from the local MT5 Python bridge
+    # ONLY after native MCP account ID + broker server match the local account.
+    native_local_candle_fallback: bool = False
     last_signal_bar: str = ""
     # Monitoring threshold, not a prediction or guarantee.
     profit_target_amount: float = 0.0

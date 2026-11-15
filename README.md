@@ -169,3 +169,27 @@ Windows CI builds the executable and renders the real Office QWidget in a headle
 
 Design references: [RigelHQ Claude Office](https://github.com/rigel-hq/claude-office) for office/agent-role metaphor; [Scope360](https://scope360.io/) and [MetaTrader 5 trading reports](https://www.metatrader5.com/en/terminal/help/trading_advanced/history_report) for financial KPI grouping and realized/floating separation.
 
+
+
+## Fix: MetaTrader 5 native MCP says get_chart_history is missing
+
+MetaTrader 5's documentation lists `get_chart_history` among terminal MCP
+tools, but available capabilities may vary by terminal build and configuration.
+Earlier LUMAVUN builds only read the first `tools/list` page, so a paginated
+server could incorrectly appear to lack that tool. The adapter now drains all
+pages (maximum 100, with cursor-loop protection). The MT5 MCP Test button
+reports whether candle history is exposed by the terminal, and lists the
+discovered read-only chart/history tools.
+
+If the tool is **genuinely unavailable**, the app does not invent prices or
+send trades. An optional checkbox in **MT5 MCP → MT5 CONNECTION** permits
+**local closed-candle read-only fallback** through the MetaTrader5 Python
+bridge when MT5 and LUMAVUN are on the same Windows PC. This is disabled by
+default. Each fallback fetch verifies that native MCP and the local terminal
+are using the same login ID and broker server. Any missing or mismatched
+identity blocks the fallback, as do missing candles. It never enables order
+execution. If data remain unavailable, the AI scan returns
+`DATA_UNAVAILABLE` and auto-scanning stops instead of retrying blindly.
+
+Do not use MetaTrader.com's separate marketdata MCP for this fallback: it
+may not support M1/M5/M15 and is not necessarily the user's broker feed.

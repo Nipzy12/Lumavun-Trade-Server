@@ -397,6 +397,17 @@ class Window(QMainWindow):
         self.mt5_remote_key.setPlaceholderText("Paste MT5 Options → MCP API key")
         form.addRow("MCP API key", self.mt5_remote_key)
         connection.layout_body.addLayout(form)
+        self.native_candle_fallback = QCheckBox(
+            "Jika tool OHLC tidak tersedia, gunakan candle terminal MT5 lokal "
+            "(read-only; akun dan server harus sama)"
+        )
+        self.native_candle_fallback.setChecked(self.cfg.native_local_candle_fallback)
+        self.native_candle_fallback.setToolTip(
+            "Opsional untuk MT5 di PC yang sama. Tidak akan membaca akun yang berbeda, "
+            "tidak memberi izin trading, dan tidak berlaku untuk gateway remote."
+        )
+        self.native_candle_fallback.toggled.connect(self.set_native_candle_fallback)
+        connection.layout_body.addWidget(self.native_candle_fallback)
         buttons = QHBoxLayout()
         save = QPushButton("Save Connection")
         save.setObjectName("primaryButton")
@@ -467,6 +478,16 @@ class Window(QMainWindow):
         self.tabs.addTab(page, "◇  MT5 MCP")
         self.refresh_mcp_arming()
 
+    def set_native_candle_fallback(self, checked):
+        cfg = Settings.load()
+        cfg.native_local_candle_fallback = bool(checked)
+        cfg.save()
+        self.log("Candle local fallback: " + ("ON (read-only, same-account check)"
+                                             if checked else "OFF"))
+        self.mcp_link_status.setText(
+            "● LOCAL READ FALLBACK ON" if checked else "● LOCAL READ FALLBACK OFF"
+        )
+
     def connection_mode_changed(self):
         self.mcp_link_status.setText("● NOT TESTED")
         self.mcp_link_status.setProperty("mode", "warning")
@@ -527,9 +548,20 @@ class Window(QMainWindow):
             return
         if self.mt5_mode.currentData() == "mt5_native":
             def report_native(info):
+                candle_info = (
+                    "OHLC get_chart_history: AVAILABLE"
+                    if info["candle_history_available"]
+                    else "OHLC get_chart_history: NOT EXPOSED by this MT5 server"
+                )
+                if not info["candle_history_available"]:
+                    candle_info += (
+                        "\nRead-only local candle fallback: "
+                        + ("ENABLED" if info["local_read_fallback_enabled"] else "DISABLED")
+                    )
                 self.native_tools_preview.setPlainText(
-                    "\n".join(x["name"] + " | " + ", ".join(x["required"])
-                              for x in info["tools"]))
+                    candle_info + "\n\n"
+                    + "\n".join(x["name"] + " | " + ", ".join(x["required"])
+                                  for x in info["tools"]))
                 if info.get("account"):
                     self.connection.setText(json.dumps(info["account"], indent=2, ensure_ascii=False))
                 self.mcp_link_status.setText("● CONNECTED / " + str(info["total_tools"]) + " TOOLS")
@@ -663,7 +695,7 @@ class Window(QMainWindow):
         self.log(json.dumps(result, indent=2, ensure_ascii=False))
         status = result.get("status", "")
         self.office.update_roles(analyst=status or "Ready")
-        if status in ("TARGET_REACHED", "TARGET_CHECK_UNAVAILABLE") and self.timer.isActive():
+        if status in ("TARGET_REACHED", "TARGET_CHECK_UNAVAILABLE", "DATA_UNAVAILABLE") and self.timer.isActive():
             self.timer.stop()
             self.auto_button.setText("Start Auto Scan")
             self.log("Auto scan paused by profit-target guard.")

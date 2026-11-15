@@ -19,6 +19,10 @@ from .risk import OrderIntent
 class NativeMT5Error(RuntimeError):
     pass
 
+class NativeToolMissingError(NativeMT5Error):
+    """Capability is genuinely absent after full MCP discovery, not a network error."""
+    pass
+
 TIMEFRAME_MINUTES = {"M1": 1, "M5": 5, "M15": 15, "M30": 30,
                      "H1": 60, "H4": 240, "D1": 1440}
 
@@ -47,11 +51,27 @@ async def _list_tools(url: str, token: str):
                                     timeout=15, sse_read_timeout=30) as (read, write, _):
         async with ClientSession(read, write) as session:
             await session.initialize()
-            result = await session.list_tools()
-            return [{"name": item.name,
-                     "description": (item.description or "")[:1200],
-                     "inputSchema": item.inputSchema or {}}
-                    for item in result.tools]
+            # MCP tools/list is paginated. Reading only page one can hide the
+            # native MT5 history tools even when the terminal does expose them.
+            all_tools = []
+            cursor = None
+            seen_cursors = set()
+            for _ in range(100):
+                result = (await session.list_tools() if cursor is None
+                          else await session.list_tools(cursor=cursor))
+                all_tools.extend({
+                    "name": item.name,
+                    "description": (item.description or "")[:1200],
+                    "inputSchema": item.inputSchema or {},
+                } for item in result.tools)
+                next_cursor = getattr(result, "next_cursor", None)
+                if not next_cursor:
+                    return all_tools
+                if next_cursor in seen_cursors:
+                    raise NativeMT5Error("Server MCP mengulang pagination cursor; daftar tool tidak lengkap")
+                seen_cursors.add(next_cursor)
+                cursor = next_cursor
+            raise NativeMT5Error("Server MCP melebihi 100 halaman tool; daftar tidak lengkap")
 
 def list_native_tools(cfg: Settings | None = None) -> list[dict]:
     cfg = cfg or Settings.load()
@@ -64,10 +84,24 @@ def list_native_tools(cfg: Settings | None = None) -> list[dict]:
                              + "). Periksa server aktif, URL, API key, dan tombol OK di MT5.") from None
 
 def _get_tool(name: str, cfg: Settings) -> dict:
-    matches = [x for x in list_native_tools(cfg) if x["name"] == name]
-    if not matches:
-        raise NativeMT5Error("Server MCP MT5 tidak menyediakan tool: " + name)
-    return matches[0]
+    available = list_native_tools(cfg)
+    matches = [x for x in available if x["name"] == name]
+    if matches:
+        return matches[0]
+    # Distinguish a missing server capability from authentication or transport
+    # failures. Never silently substitute marketdata (different symbol feed).
+    related = sorted({
+        t["name"] for t in available if
+        ("history" in t["name"].lower() or "chart" in t["name"].lower()
+         or "rates" in t["name"].lower())
+    })
+    examples = related or sorted({t["name"] for t in available})[:8]
+    raise NativeToolMissingError(
+        "Server MCP MT5 tidak menyediakan tool: " + name
+        + ". Tools tersedia: " + (", ".join(examples) if examples else "(kosong)")
+        + ". Perbarui terminal/cek tab MT5 MCP, atau aktifkan opsi fallback "
+          "candle MT5 lokal (read-only) pada LUMAVUN bila menggunakan PC yang sama."
+    )
 
 def _required(tool: dict) -> set[str]:
     schema = tool.get("inputSchema") or {}
@@ -165,6 +199,8 @@ def inspect_connection(cfg: Settings | None = None) -> dict:
                   for t in tools],
         "account": account,
         "read_only": True,
+        "candle_history_available": "get_chart_history" in names,
+        "local_read_fallback_enabled": bool(cfg.native_local_candle_fallback),
     }
 
 def _schema_args(tool: dict, symbol: str, timeframe: str, count: int) -> dict:
@@ -242,12 +278,66 @@ def _extract_bars(data: Any) -> list[dict]:
             continue
     return sorted(items, key=lambda x: x["time"])
 
+def _safe_local_candles(symbol: str, timeframe: str, count: int, cfg: Settings) -> list[dict]:
+    """Read-only fallback only after verifying exact native/local broker identity.
+
+    Never write, execute orders or reuse quotes from a different MT5 terminal.
+    """
+    from . import mt5_bridge
+    native = account_status(cfg)
+    try:
+        local = mt5_bridge.account_status()
+    except Exception as exc:
+        raise NativeMT5Error(
+            "Fallback lokal gagal membuka akun MT5 (" + type(exc).__name__
+            + "). Periksa terminal MetaTrader 5 yang sedang berjalan."
+        ) from None
+
+    def account_identity(info):
+        try:
+            login = int(info.get("login"))
+            server = str(info.get("server") or "").strip().casefold()
+        except (TypeError, ValueError, AttributeError):
+            return None
+        if login <= 0 or not server:
+            return None
+        return login, server
+
+    expected = account_identity(native)
+    if expected is None or expected != account_identity(local):
+        raise NativeMT5Error(
+            "Fallback diblokir: akun/server MT5 lokal tidak sama dengan akun "
+            "yang terhubung melalui MCP native. Pastikan login dan server cocok."
+        )
+    if (isinstance(native.get("demo"), bool) and isinstance(local.get("demo"), bool)
+            and native["demo"] != local["demo"]):
+        raise NativeMT5Error("Fallback diblokir: tipe akun DEMO/LIVE tidak cocok")
+    try:
+        candles = mt5_bridge.get_candles(symbol, timeframe, count)
+        # Detect account switching while rates are being fetched.
+        if account_identity(mt5_bridge.account_status()) != expected:
+            raise NativeMT5Error("Fallback diblokir: akun MT5 lokal berubah saat mengambil candle")
+        return candles
+    except NativeMT5Error:
+        raise
+    except Exception as exc:
+        raise NativeMT5Error(
+            "Fallback MT5 lokal gagal membaca candle (" + type(exc).__name__
+            + "). Periksa nama simbol broker dan data historis di chart."
+        ) from None
+
+
 def get_candles(symbol: str, timeframe: str = "M15", count: int = 60,
                 cfg: Settings | None = None) -> list[dict]:
     if timeframe not in TIMEFRAME_MINUTES or not (10 <= count <= 500):
         raise NativeMT5Error("Timeframe atau count candle tidak valid")
     cfg = cfg or Settings.load()
-    tool = _get_tool("get_chart_history", cfg)
+    try:
+        tool = _get_tool("get_chart_history", cfg)
+    except NativeToolMissingError:
+        if cfg.native_local_candle_fallback:
+            return _safe_local_candles(symbol, timeframe, count, cfg)
+        raise
     args = _schema_args(tool, symbol, timeframe, count)
     bars = _extract_bars(_read_tool("get_chart_history", args, cfg))
     # Closed-candle only: drop current bar when its interval is still active.
