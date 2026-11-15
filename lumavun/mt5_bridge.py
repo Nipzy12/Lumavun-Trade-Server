@@ -16,6 +16,8 @@ TIMEFRAMES = {"M1": "TIMEFRAME_M1", "M5": "TIMEFRAME_M5",
 
 def _api():
     try:
+        # Import NumPy before the MetaTrader5 native extension (NumPy C API initialization).
+        import numpy as np
         import MetaTrader5 as mt5
         return mt5
     except ModuleNotFoundError as exc:

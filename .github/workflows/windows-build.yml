@@ -31,17 +31,20 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt "pyinstaller>=6,<7"
+      - name: Verify native MT5 import BEFORE bundling
+        run: >
+          python -c "import numpy; import MetaTrader5; print('NumPy', numpy.__version__, 'MT5', MetaTrader5.__version__)"
       - name: Build desktop dashboard EXE
         run: >
           python -m PyInstaller --noconfirm --clean --onefile --windowed
           --name LUMAVUN-Trade-Server
-          --collect-all keyring --collect-all MetaTrader5
+          --collect-all keyring --collect-all numpy --collect-all MetaTrader5
           main.py
       - name: Build console MCP stdio EXE
         run: >
           python -m PyInstaller --noconfirm --clean --onefile --console
           --name Lumavun-MT5-MCP
-          --collect-all keyring --collect-all MetaTrader5
+          --collect-all keyring --collect-all numpy --collect-all MetaTrader5
           --hidden-import mcp.server.fastmcp
           mcp_entry.py
       - name: Smoke test packaged dashboard MT5 imports
