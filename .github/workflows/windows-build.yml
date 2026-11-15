@@ -35,13 +35,14 @@ jobs:
         run: >
           python -m PyInstaller --noconfirm --clean --onefile --windowed
           --name LUMAVUN-Trade-Server
-          --collect-all keyring --collect-all mcp --collect-all MetaTrader5
+          --collect-all keyring --collect-all MetaTrader5
           main.py
       - name: Build console MCP stdio EXE
         run: >
           python -m PyInstaller --noconfirm --clean --onefile --console
           --name Lumavun-MT5-MCP
-          --collect-all keyring --collect-all mcp --collect-all MetaTrader5
+          --collect-all keyring --collect-all MetaTrader5
+          --hidden-import mcp.server.fastmcp
           mcp_entry.py
       - name: Upload Windows executables
         uses: actions/upload-artifact@v4

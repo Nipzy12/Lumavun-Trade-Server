@@ -83,7 +83,8 @@ def _daily_stats(mt5) -> tuple[float, int]:
     net = 0.0
     entries = 0
     for d in deals:
-        net += float(d.profit + d.commission + d.swap + getattr(d, "fee", 0))
+        if d.type in (mt5.DEAL_TYPE_BUY, mt5.DEAL_TYPE_SELL):
+            net += float(d.profit + d.commission + d.swap + getattr(d, "fee", 0))
         if d.magic == MAGIC and d.entry == mt5.DEAL_ENTRY_IN:
             entries += 1
     return net, entries
@@ -100,7 +101,7 @@ def _preview(mt5, cfg: Settings, intent: OrderIntent) -> tuple[dict, dict]:
     if info is None or not mt5.symbol_select(intent.symbol, True):
         raise TradeRejected("Symbol not available from broker")
     tick = mt5.symbol_info_tick(intent.symbol)
-    if tick is None or tick.ask <= 0 or tick.bid <= 0:
+    if tick is None or tick.ask <= 0 or tick.bid <= 0 or tick.ask < tick.bid:
         raise TradeRejected("No valid tick")
     if time.time() - tick.time > 180:
         raise TradeRejected("Quote is stale or market is closed")
@@ -181,6 +182,7 @@ def execute_order(intent: OrderIntent, cfg: Settings | None = None, *, from_mcp:
         result = mt5.order_send(chosen)  # Only actual brokerage side effect in the project.
         if result is None:
             raise RuntimeError("MT5 order_send returned no result: " + str(mt5.last_error()))
-        if result.retcode != mt5.TRADE_RETCODE_DONE:
+        if result.retcode not in (mt5.TRADE_RETCODE_DONE, getattr(mt5, "TRADE_RETCODE_DONE_PARTIAL", -1)):
             raise RuntimeError("MT5 rejected order: " + str(result.retcode) + " " + str(result.comment))
-        return {**summary, "executed": True, "ticket": result.order, "deal": result.deal}
+        return {**summary, "executed": True, "partial_fill": result.retcode != mt5.TRADE_RETCODE_DONE,
+                "ticket": result.order, "deal": result.deal}
