@@ -128,6 +128,18 @@ def propose_trade(cfg: Settings, candles: list[dict]) -> tuple[OrderIntent | Non
             content = "".join(p.get("text", "") for p in data["candidates"][0]["content"]["parts"])
         except (KeyError, IndexError, TypeError):
             raise AIError("Gemini returned no text candidates") from None
+    elif cfg.provider == "OpenAI":
+        # Responses supports the newer reasoning model families without unsupported temperature options.
+        data = _request("POST", root + "/responses", headers=headers,
+                        json={"model": cfg.model, "instructions": SYSTEM_PROMPT,
+                              "input": payload, "max_output_tokens": 1600})
+        content = "".join(part.get("text", "")
+                          for output in data.get("output", [])
+                          if output.get("type") == "message"
+                          for part in output.get("content", [])
+                          if part.get("type") in ("output_text", "text"))
+        if not content:
+            raise AIError("OpenAI Responses returned no text output")
     else:
         data = _request("POST", root + "/chat/completions", headers=headers,
                         json={"model": cfg.model, "temperature": 0.1, "max_tokens": 650,
