@@ -59,25 +59,40 @@ def gateway_call(tool: str, arguments: dict, cfg: Settings | None = None):
 def _remote(cfg: Settings | None) -> bool:
     return (cfg or Settings.load()).mt5_mode == "mcp_http"
 
+def _native(cfg: Settings | None) -> bool:
+    return (cfg or Settings.load()).mt5_mode == "mt5_native"
+
 def account_status(cfg: Settings | None = None):
+    if _native(cfg):
+        from .native_mt5 import account_status as native_account
+        return native_account(cfg)
     if _remote(cfg):
         return gateway_call("mt5_account", {}, cfg)
     from .mt5_bridge import account_status as direct
     return direct()
 
 def list_positions(cfg: Settings | None = None):
+    if _native(cfg):
+        from .native_mt5 import list_positions as native_positions
+        return native_positions(cfg)
     if _remote(cfg):
         return gateway_call("mt5_positions", {}, cfg)
     from .mt5_bridge import list_positions as direct
     return direct()
 
 def get_candles(symbol: str, timeframe: str = "M15", count: int = 60, cfg: Settings | None = None):
+    if _native(cfg):
+        from .native_mt5 import get_candles as native_candles
+        return native_candles(symbol, timeframe, count, cfg)
     if _remote(cfg):
         return gateway_call("mt5_candles", {"symbol": symbol, "timeframe": timeframe, "count": count}, cfg)
     from .mt5_bridge import get_candles as direct
     return direct(symbol, timeframe, count)
 
 def preview_order(intent: OrderIntent, cfg: Settings | None = None):
+    if _native(cfg):
+        from .native_mt5 import preview_order as native_preview
+        return native_preview(intent, cfg)
     if _remote(cfg):
         return gateway_call("mt5_order_preview", {
             "symbol": intent.symbol, "side": intent.side, "sl": intent.sl, "tp": intent.tp}, cfg)
@@ -88,6 +103,9 @@ def execute_order(intent: OrderIntent, cfg: Settings | None = None):
     cfg = Settings.load()
     if not cfg.execution_enabled:
         raise MCPGatewayError("Client order execution is DISARMED")
+    if _native(cfg):
+        from .native_mt5 import execute_order as native_execute
+        return native_execute(intent, cfg)
     if _remote(cfg):
         # The gateway calls the shared host-side risk engine with from_mcp=True.
         # It must also be armed on the gateway Windows host.

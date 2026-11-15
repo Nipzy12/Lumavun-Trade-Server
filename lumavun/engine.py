@@ -18,6 +18,14 @@ def run_strategy_once() -> dict:
     fresh.save()
     if intent is None:
         return {"status": "HOLD", "reason": reason}
+    if cfg.mt5_mode == "mt5_native":
+        # The native broker tools are dynamically typed and NOT yet risk-validated.
+        # Return an AI proposal without turning it into a market order.
+        return {"status": "SIGNAL_ONLY", "reason": reason,
+                "proposal": {"symbol": intent.symbol, "side": intent.side,
+                             "sl": intent.sl, "tp": intent.tp},
+                "note": "Native MetaTrader MCP is read-only for automatic trading. "
+                        "Use Local Terminal mode for risk-checked execution."}
     try:
         preview = preview_order(intent, cfg)
     except TradeRejected as exc:

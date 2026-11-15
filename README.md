@@ -13,14 +13,14 @@ Native MetaTrader 5 desktop assistant with multi-provider AI, an MCP server, an 
 - Separate MCP stdio executable exposing mt5_account, mt5_positions, mt5_candles, mt5_order_preview, mt5_place_order.
 - Trade checks: demo-only by default, explicit live authorization, separate MCP order authorization, per-trade equity risk, max lot, max spread, symbols allowlist, minimum reward/risk, SL/TP, max positions and daily trades, daily realized-loss gate, order_check before order_send.
 
-## Download two EXE files
+## Download Windows EXE files
 
 1. Open GitHub repository Actions -> Windows EXE Build.
 2. Run workflow manually or open latest successful run.
 3. Download the Lumavun-Trade-Server-Windows artifact ZIP.
-4. Extract LUMAVUN-Trade-Server.exe (dashboard) and Lumavun-MT5-MCP.exe (MCP stdio server).
+4. Extract LUMAVUN-Trade-Server.exe (dashboard), Lumavun-MT5-MCP.exe (stdio server) and optional Lumavun-MT5-Gateway.exe (HTTP gateway).
 
-A Windows GitHub Actions runner builds both binaries. They are not hand-compiled in this chat.
+A Windows GitHub Actions runner builds the executables. They are not hand-compiled in this chat.
 
 ## Usage on Windows
 
@@ -69,9 +69,24 @@ Architecture: desktop GUI -> AI strategy engine -> LLM JSON proposal -> determin
 Known limits: no backtester, news calendar filter, guaranteed execution, unattended Windows service, or floating-equity-based daily loss lock. Daily loss uses realized P/L from MT5. Strategy prompts are not validated for predictive quality, and API billing belongs to the chosen provider. Do not run an external MCP client you do not trust.
 
 
-## New: HTTP MCP Gateway using an internal URL and API key
+## Native MetaTrader 5 MCP (preferred, NO extra gateway)
 
-**MT5 does not have a built-in MCP API key.** The broker trading server name is NOT an MCP URL. LUMAVUN generates its own gateway API key in the Windows credential vault. Keep the broker terminal logged in locally; never send an MT5 account password to a remote LUMAVUN desktop.
+Recent versions of MetaTrader 5 include a native MCP server. This is **not** the extra LUMAVUN gateway. See [official MetaQuotes configuration](https://www.metatrader5.com/en/terminal/help/mcp_and_ai/configuration) and [official tool capabilities](https://www.metatrader5.com/en/terminal/help/mcp_and_ai/capabilities).
+
+1. Open MetaTrader 5 on Windows and log in to your broker (start with demo). Go to **Tools → Options → MCP**.
+2. Check **Enable internal server**, confirm the address (typically `http://127.0.0.1:22346/mcp`), and click **Generate** for an API key. Copy both fields and **click OK** to save.
+3. Open `LUMAVUN-Trade-Server.exe`, tab **MT5 MCP**.
+4. Choose **MetaTrader 5 Native MCP (built-in)**, paste the copied URL and **MT5-generated** API key, click **Save Connection**, then **Test MCP Connection**.
+5. The app initiates the Streamable HTTP MCP handshake with `Authorization: Bearer <your MT5 key>`, discovers actual MT5 tool names, and optionally shows account info. Use **Check MT5 Connection** on Dashboard for account status. If the terminal exposes the supported candle tool schema, the AI can analyze closed candles.
+6. Native MCP **automatic order sending is intentionally disabled in this release**. AI output can be `SIGNAL_ONLY`; no native trading tool is called. For guarded demo orders, use **Local MT5 Terminal** mode (Python bridge) instead. Native broker trade tool schemas and lot/risk constraints require validation on the actual terminal before automated execution is safe.
+
+Native MetaTrader 5 tools include `get_trading_account_info`, `get_trading_open_positions`, `get_chart_history`, and `trade_send_market_order`, **not** the `mt5_account` and `mt5_candles` names used by the separate LUMAVUN gateway. Tool schemas vary by MT5 build, so the app discovers them on connection and does not guess unknown required arguments.
+
+**Security:** the MT5 API key is kept separately in Windows Credential Manager; never commit it, paste it into public chat or include it in screenshots. If a screenshot previously revealed the key, **regenerate it in MT5** before use. The server URL `127.0.0.1` works only when LUMAVUN and MT5 run on the same machine. HTTPS is required for network addresses or use a trusted encrypted localhost tunnel.
+
+## Optional legacy: LUMAVUN HTTP MCP Gateway
+
+**MetaTrader 5 DOES include a native MCP server and API key** in current versions. This optional LUMAVUN gateway is separate and only needed when explicitly choosing the legacy gateway mode. The broker trading server name is NOT an MCP URL. The legacy LUMAVUN gateway generates its own API key in the Windows credential vault. Keep the broker terminal logged in locally; never send an MT5 account password to a remote LUMAVUN desktop.
 
 New Windows ZIP contains THREE programs:
 - **LUMAVUN-Trade-Server.exe**: Desktop trading dashboard and MCP URL/API key configuration.

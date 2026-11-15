@@ -10,8 +10,9 @@ from PySide6.QtWidgets import (
     QTabWidget, QVBoxLayout, QWidget,
 )
 from .config import Settings, PROVIDER_URLS, put_api_key
-from .gateway_auth import save_remote_key, validate_endpoint
+from .gateway_auth import save_remote_key, save_native_api_key, validate_endpoint
 from .mt5_access import gateway_call
+from .native_mt5 import inspect_connection
 from .ai import discover_models
 from .engine import run_strategy_once
 from .mt5_access import account_status, list_positions
@@ -131,6 +132,7 @@ class Window(QMainWindow):
         ctl.addLayout(row2)
         row3 = QHBoxLayout()
         arm = QPushButton("Arm DEMO Execution")
+        self.arm_demo_btn = arm
         arm.clicked.connect(self.arm_demo)
         row3.addWidget(arm)
         self.disarm_btn = QPushButton("EMERGENCY DISARM")
@@ -139,6 +141,7 @@ class Window(QMainWindow):
         row3.addWidget(self.disarm_btn)
         ctl.addLayout(row3)
         live = QPushButton("Enable LIVE Orders (separate confirmation)")
+        self.arm_live_btn = live
         live.setObjectName("danger")
         live.clicked.connect(self.arm_live)
         ctl.addWidget(live)
@@ -253,22 +256,26 @@ class Window(QMainWindow):
         layout = QVBoxLayout(page)
         group = QGroupBox("MCP Server for External AI Agents")
         inner = QVBoxLayout(group)
-        inner.addWidget(QLabel("Transport: stdio. The second Windows executable is a local MCP tool server.\n"
-                               "stdio is still supported with Lumavun-MT5-MCP.exe.\n"
-                               "The new HTTP Gateway runs on the Windows PC with MT5; its own key is not a broker password."))
+        inner.addWidget(QLabel("Pilih Native MetaTrader 5 MCP untuk menggunakan SERVER dan API KEY dari MT5 → Options → MCP.\n"
+                               "Server MCP bawaan MT5 berbeda dari Gateway LUMAVUN (opsional).\n"
+                               "Kunci tidak pernah disimpan di pengaturan biasa."))
         connection = QGroupBox("MT5 Connection: Local Terminal or Internal MCP Server")
         form = QFormLayout(connection)
         self.mt5_mode = QComboBox()
         self.mt5_mode.addItem("Local MT5 Terminal", "local")
-        self.mt5_mode.addItem("Internal MCP Gateway (URL + API Key)", "mcp_http")
-        self.mt5_mode.setCurrentIndex(1 if self.cfg.mt5_mode == "mcp_http" else 0)
+        self.mt5_mode.addItem("LUMAVUN HTTP Gateway (legacy)", "mcp_http")
+        self.mt5_mode.addItem("MetaTrader 5 Native MCP (built-in)", "mt5_native")
+        self.mt5_mode.setCurrentIndex(2 if self.cfg.mt5_mode == "mt5_native" else
+                                      1 if self.cfg.mt5_mode == "mcp_http" else 0)
+        self.mt5_mode.currentIndexChanged.connect(self.connection_mode_changed)
         form.addRow("Connection mode", self.mt5_mode)
-        self.mt5_url = QLineEdit(self.cfg.mt5_mcp_url)
-        self.mt5_url.setPlaceholderText("http://127.0.0.1:8765/mcp or HTTPS gateway address")
+        self.mt5_url = QLineEdit(self.cfg.mt5_native_url if self.cfg.mt5_mode == "mt5_native"
+                                 else self.cfg.mt5_mcp_url)
+        self.mt5_url.setPlaceholderText("http://127.0.0.1:22346/mcp")
         form.addRow("MCP server URL", self.mt5_url)
         self.mt5_remote_key = QLineEdit()
         self.mt5_remote_key.setEchoMode(QLineEdit.EchoMode.Password)
-        self.mt5_remote_key.setPlaceholderText("Gateway-generated key, saved in Windows Credential Manager")
+        self.mt5_remote_key.setPlaceholderText("API key dari MT5 → Options → MCP (atau Gateway jika dipilih)")
         form.addRow("MCP API Key", self.mt5_remote_key)
         buttons = QHBoxLayout()
         save = QPushButton("Save Connection")
@@ -279,12 +286,18 @@ class Window(QMainWindow):
         test.clicked.connect(self.test_mcp_connection)
         buttons.addWidget(test)
         form.addRow(buttons)
-        note = QLabel("Start Lumavun-MT5-Gateway.exe on the PC running MT5. "
-                      "Copy its MCP URL and its generated API key here. "
-                      "Remote network access must use HTTPS or a localhost SSH tunnel.")
+        note = QLabel("Untuk mode Native, aktifkan 'server internal' di tab MCP MT5, salin Alamat dan Kunci API, "
+                      "klik OK pada MT5, lalu Test MCP Connection. Tampilkan daftar tool untuk memeriksa kontrak "
+                      "yang disediakan server. Auto-order lewat MCP native belum diaktifkan sampai validasi risikonya lengkap.")
         note.setWordWrap(True)
         form.addRow(note)
         inner.addWidget(connection)
+        inner.addWidget(QLabel("Discovered Native MetaTrader Tools (read-only display):"))
+        self.native_tools_preview = QPlainTextEdit()
+        self.native_tools_preview.setReadOnly(True)
+        self.native_tools_preview.setMinimumHeight(170)
+        self.native_tools_preview.setPlaceholderText("Test MCP Connection untuk menampilkan daftar tool MT5 native.")
+        inner.addWidget(self.native_tools_preview)
         self.mcp_orders = QCheckBox("Allow external MCP clients to place risk-checked orders when execution is armed")
         self.mcp_orders.setChecked(self.cfg.allow_mcp_orders)
         self.mcp_orders.toggled.connect(self.set_mcp_orders)
@@ -307,33 +320,71 @@ class Window(QMainWindow):
         layout.addWidget(group)
         layout.addStretch()
         self.tabs.addTab(page, "MT5 MCP")
+        self.refresh_mcp_arming()
+
+    def connection_mode_changed(self):
+        mode = self.mt5_mode.currentData()
+        cfg = Settings.load()
+        self.mt5_url.setText(cfg.mt5_native_url if mode == "mt5_native" else cfg.mt5_mcp_url)
+        self.mt5_remote_key.clear()
+        self.refresh_mcp_arming()
+
+    def refresh_mcp_arming(self):
+        native = self.mt5_mode.currentData() == "mt5_native"
+        self.arm_demo_btn.setEnabled(not native)
+        self.arm_live_btn.setEnabled(not native)
+        if native:
+            self.arm_status.setText("Execution status: NATIVE MCP READ-ONLY (signals only; no orders)")
+        else:
+            self.update_arm_label()
 
     def save_mt5_connection(self):
         cfg = Settings.load()
         cfg.mt5_mode = self.mt5_mode.currentData()
-        cfg.mt5_mcp_url = self.mt5_url.text().strip()
+        entered_url = self.mt5_url.text().strip()
         try:
-            if cfg.mt5_mode == "mcp_http":
-                cfg.mt5_mcp_url = validate_endpoint(cfg.mt5_mcp_url)
+            if cfg.mt5_mode == "mt5_native":
+                cfg.mt5_native_url = validate_endpoint(entered_url)
+            elif cfg.mt5_mode == "mcp_http":
+                cfg.mt5_mcp_url = validate_endpoint(entered_url)
             if self.mt5_remote_key.text().strip():
-                save_remote_key(self.mt5_remote_key.text())
+                if cfg.mt5_mode == "mt5_native":
+                    save_native_api_key(self.mt5_remote_key.text())
+                elif cfg.mt5_mode == "mcp_http":
+                    save_remote_key(self.mt5_remote_key.text())
                 self.mt5_remote_key.clear()
         except Exception as exc:
             self.log("Invalid MCP connection: " + str(exc))
             return False
+        if cfg.mt5_mode == "mt5_native":
+            cfg.execution_enabled = False
+            cfg.live_allowed = False
         cfg.save()
-        self.log("MT5 connection mode saved: " + ("MCP Gateway" if cfg.mt5_mode == "mcp_http" else "Local Terminal"))
+        self.refresh_mcp_arming()
+        self.log("MT5 connection mode saved: " + cfg.mt5_mode)
         return True
 
     def test_mcp_connection(self):
-        self.mt5_mode.setCurrentIndex(1)
+        if self.mt5_mode.currentData() == "local":
+            self.log("Pilih MetaTrader 5 Native MCP atau LUMAVUN Gateway terlebih dahulu.")
+            return
         if not self.save_mt5_connection():
             return
-        def report(status):
+        if self.mt5_mode.currentData() == "mt5_native":
+            def report_native(info):
+                self.native_tools_preview.setPlainText(
+                    "\n".join(x["name"] + " | " + ", ".join(x["required"])
+                              for x in info["tools"]))
+                if info.get("account"):
+                    self.connection.setText(json.dumps(info["account"], indent=2, ensure_ascii=False))
+                self.log("Native MT5 MCP connected: " + str(info["total_tools"]) + " tools found (read-only).")
+            self.task(lambda: inspect_connection(Settings.load()), report_native)
+            return
+        def report_gateway(status):
             self.connection.setText(json.dumps(status, indent=2))
-            self.log("Authenticated MCP Gateway connection succeeded (" +
-                     ("DEMO" if status["demo"] else "LIVE") + ")")
-        self.task(lambda: gateway_call("mt5_account", {}, Settings.load()), report)
+            self.log("Authenticated LUMAVUN MCP Gateway connected (" +
+                     ("DEMO" if status.get("demo") is True else "LIVE/UNKNOWN") + ")")
+        self.task(lambda: gateway_call("mt5_account", {}, Settings.load()), report_gateway)
 
     def log(self, msg):
         self.log_box.appendPlainText(str(msg))
@@ -425,7 +476,7 @@ class Window(QMainWindow):
     def check_mt5(self):
         def show(status):
             self.connection.setText(json.dumps(status, indent=2))
-            self.log("MT5 connection checked (" + ("DEMO" if status["demo"] else "LIVE") + ")")
+            self.log("MT5 connection checked (" + ("DEMO" if status.get("demo") is True else "LIVE" if status.get("demo") is False else "UNKNOWN") + ")")
         self.task(lambda: account_status(Settings.load()), show)
 
     def check_positions(self):
@@ -466,7 +517,7 @@ class Window(QMainWindow):
         cfg.execution_enabled = True
         cfg.live_allowed = False
         cfg.save()
-        self.update_arm_label()
+        self.refresh_mcp_arming()
         self.log("DEMO order execution armed. LIVE accounts remain blocked.")
 
     def arm_live(self):
@@ -485,7 +536,7 @@ class Window(QMainWindow):
         cfg.execution_enabled = True
         cfg.live_allowed = True
         cfg.save()
-        self.update_arm_label()
+        self.refresh_mcp_arming()
         self.log("WARNING: LIVE order execution is now authorized.")
 
     def disarm(self):
@@ -497,7 +548,7 @@ class Window(QMainWindow):
         self.mcp_orders.blockSignals(True)
         self.mcp_orders.setChecked(False)
         self.mcp_orders.blockSignals(False)
-        self.update_arm_label()
+        self.refresh_mcp_arming()
         self.log("Execution DISARMED for AI engine and MCP. Existing trades remain open.")
 
     def set_mcp_orders(self, checked):
