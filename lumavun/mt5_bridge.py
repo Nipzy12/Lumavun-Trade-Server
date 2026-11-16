@@ -7,6 +7,7 @@ import time
 from filelock import FileLock
 from .config import Settings, config_path
 from .risk import OrderIntent, TradeRejected, ensure_direction, calculate_lot
+from .symbols import symbols_from_payload, resolve_symbol, search_catalogue, allowlisted, SymbolResolutionError
 
 MAGIC = 260115
 TIMEFRAMES = {"M1": "TIMEFRAME_M1", "M5": "TIMEFRAME_M5",
@@ -73,15 +74,36 @@ def list_positions() -> list[dict]:
              "open_price": p.price_open, "sl": p.sl, "tp": p.tp,
              "profit": p.profit} for p in positions]
 
+def list_broker_symbols(query: str = "") -> list[dict]:
+    """Query actual symbols from logged-in MT5 broker (no hardcoded suffixes)."""
+    mt5 = _connected()
+    entries = mt5.symbols_get()
+    if entries is None:
+        raise SymbolResolutionError("MT5 tidak dapat membaca katalog simbol broker")
+    return search_catalogue(query, symbols_from_payload(entries), limit=100)
+
+
+def resolve_broker_symbol(symbol: str, mt5=None) -> str:
+    mt5 = mt5 or _connected()
+    entries = mt5.symbols_get()
+    if entries is None:
+        raise SymbolResolutionError("MT5 gagal membaca katalog simbol broker")
+    resolved = resolve_symbol(symbol, symbols_from_payload(entries))
+    if mt5.symbol_info(resolved) is None:
+        raise SymbolResolutionError("Broker tidak mengenali simbol terpilih: " + resolved)
+    return resolved
+
+
 def get_candles(symbol: str, timeframe: str = "M15", count: int = 60) -> list[dict]:
     mt5 = _connected()
     if timeframe not in TIMEFRAMES:
         raise ValueError("Unsupported timeframe")
     if not (10 <= count <= 500):
         raise ValueError("Candles count must be between 10 and 500")
-    if mt5.symbol_info(symbol) is None or not mt5.symbol_select(symbol, True):
-        raise RuntimeError("Symbol unavailable: " + symbol)
-    rates = mt5.copy_rates_from_pos(symbol, getattr(mt5, TIMEFRAMES[timeframe]), 1, count)
+    broker_symbol = resolve_broker_symbol(symbol, mt5)
+    if not mt5.symbol_select(broker_symbol, True):
+        raise SymbolResolutionError("Simbol broker tidak bisa ditampilkan di Market Watch: " + broker_symbol)
+    rates = mt5.copy_rates_from_pos(broker_symbol, getattr(mt5, TIMEFRAMES[timeframe]), 1, count)
     if rates is None or len(rates) < 10:
         raise RuntimeError("Not enough CLOSED MT5 candles available")
     return [{"time": int(r["time"]), "open": float(r["open"]),
@@ -105,17 +127,21 @@ def _daily_stats(mt5) -> tuple[float, int]:
     return net, entries
 
 def _preview(mt5, cfg: Settings, intent: OrderIntent) -> tuple[dict, dict]:
-    if not isinstance(intent.symbol, str) or intent.symbol not in {
-        item.strip() for item in cfg.allow_symbols.split(",") if item.strip()
-    }:
-        raise TradeRejected("Symbol is not in the allowlist (exact broker symbol required)")
+    if not isinstance(intent.symbol, str):
+        raise TradeRejected("Invalid symbol")
+    try:
+        actual = resolve_broker_symbol(intent.symbol, mt5)
+    except SymbolResolutionError as exc:
+        raise TradeRejected(str(exc)) from exc
+    if not allowlisted(cfg.allow_symbols, actual):
+        raise TradeRejected("Symbol " + actual + " is not in the risk allowlist")
     if intent.side not in ("BUY", "SELL"):
         raise TradeRejected("Invalid order side")
     account = _account(mt5)
-    info = mt5.symbol_info(intent.symbol)
-    if info is None or not mt5.symbol_select(intent.symbol, True):
+    info = mt5.symbol_info(actual)
+    if info is None or not mt5.symbol_select(actual, True):
         raise TradeRejected("Symbol not available from broker")
-    tick = mt5.symbol_info_tick(intent.symbol)
+    tick = mt5.symbol_info_tick(actual)
     if tick is None or tick.ask <= 0 or tick.bid <= 0 or tick.ask < tick.bid:
         raise TradeRejected("No valid tick")
     if time.time() - tick.time > 180:
@@ -141,21 +167,21 @@ def _preview(mt5, cfg: Settings, intent: OrderIntent) -> tuple[dict, dict]:
     if trade_count >= cfg.max_trades_day:
         raise TradeRejected("Maximum daily bot trades reached")
     trade_type = mt5.ORDER_TYPE_BUY if intent.side == "BUY" else mt5.ORDER_TYPE_SELL
-    one_lot_pnl = mt5.order_calc_profit(trade_type, intent.symbol, 1.0, entry, intent.sl)
+    one_lot_pnl = mt5.order_calc_profit(trade_type, actual, 1.0, entry, intent.sl)
     if one_lot_pnl is None or not math.isfinite(one_lot_pnl) or one_lot_pnl >= 0:
         raise TradeRejected("MT5 cannot calculate valid stop-loss risk")
     lot = calculate_lot(float(account.equity), float(cfg.risk_per_trade_pct),
                         -float(one_lot_pnl), float(info.volume_min),
                         float(info.volume_max), float(info.volume_step), float(cfg.max_lot))
-    actual_pnl = mt5.order_calc_profit(trade_type, intent.symbol, lot, entry, intent.sl)
+    actual_pnl = mt5.order_calc_profit(trade_type, actual, lot, entry, intent.sl)
     if actual_pnl is None or -float(actual_pnl) > account.equity * cfg.risk_per_trade_pct / 100 + 0.01:
         raise TradeRejected("Rounded volume exceeds risk budget")
-    base_req = {"action": mt5.TRADE_ACTION_DEAL, "symbol": intent.symbol,
+    base_req = {"action": mt5.TRADE_ACTION_DEAL, "symbol": actual,
                 "volume": lot, "type": trade_type, "price": round(entry, info.digits),
                 "sl": round(intent.sl, info.digits), "tp": round(intent.tp, info.digits),
                 "deviation": 20, "magic": MAGIC, "comment": "LUMAVUN AI guarded",
                 "type_time": mt5.ORDER_TIME_GTC}
-    summary = {"symbol": intent.symbol, "side": intent.side, "entry": entry,
+    summary = {"symbol": actual, "side": intent.side, "entry": entry,
                "sl": intent.sl, "tp": intent.tp, "lot": lot,
                "estimated_sl_loss": round(-float(actual_pnl), 2),
                "spread_points": round(spread, 2), "account_demo": account.trade_mode == mt5.ACCOUNT_TRADE_MODE_DEMO,

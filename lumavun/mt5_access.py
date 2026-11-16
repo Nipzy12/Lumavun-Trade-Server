@@ -10,6 +10,7 @@ import json
 from .config import Settings
 from .gateway_auth import remote_key, validate_endpoint
 from .risk import OrderIntent
+from .symbols import symbols_from_payload, resolve_symbol, search_catalogue, SymbolResolutionError
 
 class MCPGatewayError(RuntimeError):
     pass
@@ -79,6 +80,32 @@ def list_positions(cfg: Settings | None = None):
         return gateway_call("mt5_positions", {}, cfg)
     from .mt5_bridge import list_positions as direct
     return direct()
+
+def list_broker_symbols(query: str = "", cfg: Settings | None = None) -> list[dict]:
+    cfg = cfg or Settings.load()
+    if _native(cfg):
+        from .native_mt5 import list_broker_symbols as native_symbols
+        return native_symbols(query, cfg)
+    if _remote(cfg):
+        data = gateway_call("mt5_symbols", {"query": query}, cfg)
+        return search_catalogue(query, symbols_from_payload(data), limit=100)
+    from .mt5_bridge import list_broker_symbols as local_symbols
+    return local_symbols(query)
+
+
+def resolve_broker_symbol(symbol: str, cfg: Settings | None = None) -> str:
+    cfg = cfg or Settings.load()
+    if _native(cfg):
+        from .native_mt5 import resolve_broker_symbol as native_resolve
+        return native_resolve(symbol, cfg)
+    if _remote(cfg):
+        # Ask for unfiltered broker inventory, NOT a narrowed exact-name lookup.
+        # The resolver must see all candidates before it may choose one.
+        data = gateway_call("mt5_symbols", {"query": ""}, cfg)
+        return resolve_symbol(symbol, symbols_from_payload(data))
+    from .mt5_bridge import resolve_broker_symbol as local_resolve
+    return local_resolve(symbol)
+
 
 def get_candles(symbol: str, timeframe: str = "M15", count: int = 60, cfg: Settings | None = None):
     if _native(cfg):

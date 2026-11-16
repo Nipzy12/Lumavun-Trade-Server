@@ -17,7 +17,7 @@ from .native_mt5 import inspect_connection
 from .mt5_installer import PY_LAUNCHER_COMMAND, open_install_cmd
 from .ai import discover_models
 from .engine import run_strategy_once
-from .mt5_access import account_status, list_positions
+from .mt5_access import account_status, list_positions, list_broker_symbols
 from .office import OfficeView
 from .premium_ui import (
     STYLESHEET, PremiumPanel, PageScroll, ResponsiveRow, page_hero, spaced_form,
@@ -279,6 +279,10 @@ class Window(QMainWindow):
         self.symbol = QLineEdit(self.cfg.symbol)
         self.symbol.setPlaceholderText("Broker exact name, e.g. XAUUSDm")
         symbols.addWidget(self.symbol, 2)
+        find_symbol_button = QPushButton("Cari Simbol Broker")
+        find_symbol_button.setToolTip("Baca simbol dari terminal broker MT5 yang terhubung.")
+        find_symbol_button.clicked.connect(self.find_broker_symbol)
+        symbols.addWidget(find_symbol_button)
         symbols.addWidget(QLabel("Timeframe"))
         self.timeframe = QComboBox()
         self.timeframe.addItems(("M1", "M5", "M15", "M30", "H1", "H4", "D1"))
@@ -686,6 +690,27 @@ class Window(QMainWindow):
             self.model.setCurrentIndex(0)
         self.log("Fetched " + str(len(models)) + " available models. Save the selected model to use it.")
 
+    def find_broker_symbol(self):
+        query = self.symbol.text().strip()
+        cfg = Settings.load()
+        def show(entries):
+            if not entries:
+                self.log("Simbol tidak ditemukan di broker. Periksa Market Watch MT5.")
+                return
+            labels = {}
+            for entry in entries:
+                exact = entry["symbol"]
+                detail = (entry.get("description") or "")[:55]
+                labels[exact + (" | " + detail if detail else "")] = exact
+            selected, accepted = QInputDialog.getItem(
+                self, "Pilih Simbol Broker MT5",
+                "Pilih nama simbol persis dari broker:", list(labels), 0, False)
+            if accepted and selected in labels:
+                self.symbol.setText(labels[selected])
+                self.log("Broker symbol selected: " + labels[selected] +
+                         ". Klik Save Strategy; risk allowlist tetap berlaku.")
+        self.task(lambda: list_broker_symbols(query, cfg), show)
+
     def save_strategy(self):
         cfg = Settings.load()
         cfg.symbol = self.symbol.text().strip()
@@ -738,7 +763,10 @@ class Window(QMainWindow):
         if status in ("TARGET_REACHED", "TARGET_CHECK_UNAVAILABLE", "DATA_UNAVAILABLE") and self.timer.isActive():
             self.timer.stop()
             self.auto_button.setText("Start Auto Scan")
-            self.log("Auto scan paused by profit-target guard.")
+            if status == "DATA_UNAVAILABLE":
+                self.log("Auto scan paused: simbol/data broker tidak tersedia. BUKAN profit-target guard.")
+            else:
+                self.log("Auto scan paused by profit-target guard (" + status + ").")
         self.office.refresh()
 
     def toggle_auto(self):

@@ -27,8 +27,8 @@ A Windows GitHub Actions runner builds the executables. They are not hand-compil
 1. Install MetaTrader 5, log in on a DEMO account, enable algorithmic trading in the terminal, and leave MT5 running.
 2. Launch LUMAVUN-Trade-Server.exe and click Check MT5 Connection.
 3. Set AI provider, secret API key (not needed for Ollama), model ID and optional custom HTTPS base URL.
-4. Enter the exact broker symbol including suffix, timeframe and strategy. Save.
-5. Add the exact symbol to the risk allowlist. Configure lot cap, max risk, spread and trade limits.
+4. Enter an instrument such as XAUUSD or click Strategy > Cari Simbol Broker to choose the exact MT5 broker spelling (XAUUSDm/XAUUSDc/etc). Save.
+5. Configure the risk allowlist. A generic XAUUSD entry permits a verified suffix; an explicit XAUUSDm entry permits only that exact tier. Existing limits still apply.
 6. Click Analyze One Closed Candle. Initially all AI signals are previews, not orders.
 7. If appropriate, arm DEMO execution. LIVE real-money trading requires the phrase ENABLE LIVE TRADING and separate confirmation. Emergency Disarm blocks any further app-originated order but never closes existing positions.
 8. Start Auto Scan for periodic analysis while the app remains open. Only one evaluation is run per latest closed candle.
@@ -202,3 +202,35 @@ No install runs without explicit button click; the command text is fixed and is 
 The correct official package name on PyPI is MetaTrader5, NOT mt5. It requires a compatible Windows Python runtime, typically x64, and a MetaTrader 5 terminal.
 Important: LUMAVUN's frozen PyInstaller EXE already bundles MetaTrader5. Pip installs it into a separate system Python interpreter and cannot repair DLLs inside the EXE.
 Official documentation: https://www.mql5.com/en/docs/python_metatrader5
+
+
+## MT5 broker symbol discovery and auto-scan safety
+
+Gold and FX symbols differ across brokers and account tiers, e.g.
+XAUUSD / XAUUSDm / XAUUSDc / XAUUSD.pro / GOLD. The scanner no longer
+assumes all accounts offer the unsuffixed spelling.
+
+- Local mode queries MetaTrader5.symbols_get() on the logged-in terminal.
+- Native MT5 MCP mode queries get_marketwatch_symbols (read-only). Add
+  missing instruments to Market Watch in MT5 before discovery.
+- LUMAVUN Gateway mode queries new read-only mt5_symbols.
+- Exact names take precedence. A generic name resolves only when there
+  is ONE unambiguous broker catalogue match. Multiple variants cause
+  AMBIGUOUS_SYMBOL and request explicit selection through the Strategy
+  tab Cari Simbol Broker button, never a guessed trading instrument.
+- Unknown suffixes can be selected by exact name in the catalogue
+  search. Cross-quote substitutions such as BTCUSD -> BTCUSDT and
+  forward/futures substitutions such as XAUUSD -> XAUUSDF are forbidden.
+- The AI and order risk gate use the exact resolved broker symbol, and
+  no new trade permissions or automatic ordering rights are granted.
+- DATA_UNAVAILABLE does not imply the profit target was reached. The
+  auto-scan pause message distinguishes broker data failure from the
+  TARGET_REACHED / TARGET_CHECK_UNAVAILABLE safety guards.
+- No real orders are placed by the CI tests. Live account and broker
+  data availability still require validation in the user's MT5 demo
+  terminal.
+
+MetaQuotes references:
+https://www.mql5.com/en/docs/python_metatrader5/mt5symbolsget_py
+https://www.metatrader5.com/en/terminal/help/trading/market_watch
+https://www.metatrader5.com/en/terminal/help/mcp_and_ai/capabilities
