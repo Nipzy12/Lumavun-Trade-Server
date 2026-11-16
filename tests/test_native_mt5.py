@@ -107,6 +107,7 @@ def test_native_strategy_returns_signal_without_sending_order(monkeypatch):
     monkeypatch.setattr(Settings, "load", classmethod(lambda cls: Settings(
         mt5_mode="mt5_native", last_signal_bar="", symbol="XAUUSD", timeframe="M15",
         execution_enabled=True)))
+    monkeypatch.setattr(engine, "resolve_broker_symbol", lambda symbol,cfg: symbol)
     monkeypatch.setattr(engine, "get_candles",
                         lambda *args: [{"time": i} for i in range(60)])
     monkeypatch.setattr(engine, "propose_trade",

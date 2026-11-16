@@ -116,6 +116,7 @@ def test_local_fallback_never_reads_wrong_account(monkeypatch):
 def test_engine_pauses_before_ai_if_native_bars_are_unavailable(monkeypatch):
     cfg = Settings(mt5_mode="mt5_native")
     monkeypatch.setattr(Settings, "load", classmethod(lambda cls: cfg))
+    monkeypatch.setattr(engine, "resolve_broker_symbol", lambda symbol,cfg: symbol)
     monkeypatch.setattr(engine, "get_candles",
                         lambda *args: (_ for _ in ()).throw(
                             native_mt5.NativeMT5Error("Candle MCP tidak tersedia")))

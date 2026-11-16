@@ -15,6 +15,7 @@ from typing import Any
 from .config import Settings
 from .gateway_auth import validate_endpoint
 from .risk import OrderIntent
+from .symbols import symbols_from_payload, resolve_symbol, search_catalogue, SymbolResolutionError
 
 class NativeMT5Error(RuntimeError):
     pass
@@ -278,6 +279,22 @@ def _extract_bars(data: Any) -> list[dict]:
             continue
     return sorted(items, key=lambda x: x["time"])
 
+def list_broker_symbols(query: str = "", cfg: Settings | None = None) -> list[dict]:
+    """Read only the visible symbols published by the native MT5 Market Watch."""
+    cfg = cfg or Settings.load()
+    catalogue = symbols_from_payload(_read_tool("get_marketwatch_symbols", {}, cfg))
+    return search_catalogue(query, catalogue, limit=100)
+
+
+def resolve_broker_symbol(symbol: str, cfg: Settings | None = None) -> str:
+    cfg = cfg or Settings.load()
+    catalogue = symbols_from_payload(_read_tool("get_marketwatch_symbols", {}, cfg))
+    try:
+        return resolve_symbol(symbol, catalogue)
+    except SymbolResolutionError as exc:
+        raise NativeMT5Error(str(exc)) from exc
+
+
 def _safe_local_candles(symbol: str, timeframe: str, count: int, cfg: Settings) -> list[dict]:
     """Read-only fallback only after verifying exact native/local broker identity.
 
@@ -336,9 +353,12 @@ def get_candles(symbol: str, timeframe: str = "M15", count: int = 60,
         tool = _get_tool("get_chart_history", cfg)
     except NativeToolMissingError:
         if cfg.native_local_candle_fallback:
+            # Local fallback independently resolves its symbol only after
+            # the native and local broker account identities are verified.
             return _safe_local_candles(symbol, timeframe, count, cfg)
         raise
-    args = _schema_args(tool, symbol, timeframe, count)
+    actual = resolve_broker_symbol(symbol, cfg)
+    args = _schema_args(tool, actual, timeframe, count)
     bars = _extract_bars(_read_tool("get_chart_history", args, cfg))
     # Closed-candle only: drop current bar when its interval is still active.
     now = datetime.now(timezone.utc).timestamp()
