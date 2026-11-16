@@ -97,7 +97,9 @@ def test_candle_timestamp_excludes_unclosed_bar(monkeypatch):
         "name": name, "inputSchema": {"type": "object",
         "properties": {"symbol": {}, "timeframe": {}, "count": {}},
         "required": ["symbol","timeframe","count"]}})
-    monkeypatch.setattr(native_mt5, "_read_tool", lambda name, params, cfg: {"bars":bars})
+    monkeypatch.setattr(native_mt5, "_read_tool", lambda name, params, cfg:
+                        {"symbols": [{"symbol": "XAUUSD"}]} if name == "get_marketwatch_symbols"
+                        else {"bars":bars})
     result = native_mt5.get_candles("XAUUSD", "M5", 60, native_config())
     assert len(result) == 12
     assert result[-1]["time"] < cutoff
