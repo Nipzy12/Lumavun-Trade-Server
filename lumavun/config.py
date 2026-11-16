@@ -20,6 +20,31 @@ PROVIDER_URLS = {
     "Custom (OpenAI-compatible)": "",
 }
 
+# Strategy presets translated from user-provided Pine Script v6 SMC Entry Models PRO.
+# These are editable AI instructions, NOT a bar-by-bar Pine execution engine.
+SMC_SHARED = """SMC Entry Models PRO | confirmed CLOSED candles only.
+Higher timeframe H4: require bullish/bearish structure bias aligned with proposed trade; HTF POI source OB or FVG. If H4 candles/POI cannot be verified from supplied data, HOLD, never fabricate HTF confirmation.
+Entry zone Proximal: BUY at upper zone boundary, SELL at lower zone boundary.
+Quality strict (Ketat): heuristic score >=85/100, impulse body/range >=0.60, structural breakout body >=0.70 ATR, close beyond swing >=0.06 ATR, zone width 0.04-2.2 ATR. ATR period 14.
+Invalidate OB/FVG only on confirmed candle CLOSE beyond zone edge plus 0.03 ATR buffer. Discard deeply mitigated (>=95%), non-fresh retested zones (max retests 0), or expired zones (>250 candles).
+SL beyond structural extreme with 0.12 ATR buffer; TP exactly 2x entry-to-SL distance (RR 1:2). Pending valid 40 bars. Reject if stop distance >10 ATR. No future data or same-bar creation fills.
+If insufficient historical candles, pivots or H4 context: HOLD. Score is heuristic, never a win-rate estimate. Do not send orders; return BUY/SELL/HOLD proposal only."""
+
+SMC_MODELS = {
+    "Manual / Custom": None,
+    "Auto | M1 + M2 + M3 (priority)": """Evaluate three models independently and select only a fully qualified setup. When multiple qualify, prioritize M1, then M2, then M3; this is rule priority, NOT backtest-proven profitability. If no qualified model, HOLD.
+M1: confirmed liquidity sweep penetrating swing by >=0.04 ATR, close back inside; within 14 bars require opposite structure CHoCH/MSS confirmed by CLOSE and shift candle body >=0.55 ATR; enter fresh OB, else qualified FVG retracement.
+M2: trend continuation BOS confirmed by CLOSE, opposite candle OB origin <=8 bars, departure >=0.08 ATR, MUST have qualified fresh FVG within 6 bars of BOS; enter proximal OB.
+M3: 3-candle FVG with middle candle displacement body >=1.0 ATR, gap >=0.12 ATR, trend/HTF alignment, enter proximal FVG.
+""" + SMC_SHARED,
+    "M1 | Sweep → CHoCH/MSS": """Only M1: liquidity sweep below/above confirmed swing penetrating >=0.04 ATR, candle closes back within swing; within 14 closed bars require opposing structural CLOSE break (CHoCH/MSS) with shift body >=0.55 ATR. Fresh OB retracement preferred; qualified fresh FVG fallback. No sweep + shift = HOLD.
+""" + SMC_SHARED,
+    "M2 | OB + FVG BOS": """Only M2: continuation BOS confirmed by candle CLOSE, body >=0.70 ATR, body/range >=0.60, close beyond structure >=0.06 ATR. Identify last opposite candle OB within 8 bars, clean departure >=0.08 ATR. Qualified fresh FVG near BOS within 6 bars is MANDATORY. Proximal OB entry; otherwise HOLD.
+""" + SMC_SHARED,
+    "M3 | FVG Sniper": """Only M3: three-candle fair value gap: bullish current low > high two candles ago, bearish current high < low two candles ago; minimum gap 0.12 ATR, middle candle body >=1.0 ATR, body/range >=0.60, structure and H4 bias agree. Proximal FVG entry; otherwise HOLD.
+""" + SMC_SHARED,
+}
+
 DEFAULT_STRATEGY = """Timeframe M15. Identify confirmed liquidity sweeps with candle close confirmation.
 Prefer HOLD unless setup is clear. For BUY, the SL is BELOW entry and TP ABOVE entry.
 For SELL, the SL is ABOVE entry and TP BELOW entry.
