@@ -32,7 +32,7 @@ jobs:
         shell: pwsh
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -r requirements.txt pytest pyinstaller pillow
+          python -m pip install -r requirements.txt pytest pyinstaller pillow "mcp[cli]"
       - name: Syntax compile (no MT5 terminal required)
         shell: pwsh
         run: python -m compileall -q lumavun tests tools smc_entry.py
