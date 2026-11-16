@@ -1,0 +1,84 @@
+name: SMC Windows EXE Build and Verification
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feat/smc-poi-history-parity-build
+  pull_request:
+    paths:
+      - "lumavun/**"
+      - "tests/**"
+      - "tools/**"
+      - "smc_entry.py"
+      - ".github/workflows/smc-windows-exe.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  verify-and-build:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Set up x64 Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          architecture: x64
+      - name: Install desktop and test dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt pytest pyinstaller pillow
+      - name: Syntax compile (no MT5 terminal required)
+        shell: pwsh
+        run: python -m compileall -q lumavun tests tools smc_entry.py
+      - name: Run offline regression tests
+        shell: pwsh
+        run: python -m pytest -q
+      - name: Create Windows application icon
+        shell: pwsh
+        run: python scripts/build_icon.py
+      - name: Build Windows GUI EXE
+        shell: pwsh
+        run: |
+          python -m PyInstaller --noconfirm --clean --onefile --windowed --name LUMAVUN-Trade-Server --icon assets/lumavun.ico --add-data "assets;assets" --collect-all MetaTrader5 --collect-submodules keyring main.py
+      - name: Build read-only research EXE
+        shell: pwsh
+        run: |
+          python -m PyInstaller --noconfirm --clean --onefile --console --name LUMAVUN-SMC-Research --collect-all MetaTrader5 smc_entry.py
+      - name: Build MCP stdio EXE
+        shell: pwsh
+        run: |
+          python -m PyInstaller --noconfirm --clean --onefile --console --name Lumavun-MT5-MCP --collect-all MetaTrader5 --collect-submodules mcp mcp_entry.py
+      - name: Build MCP HTTP Gateway EXE
+        shell: pwsh
+        run: |
+          python -m PyInstaller --noconfirm --clean --onefile --console --name Lumavun-MT5-Gateway --collect-all MetaTrader5 --collect-submodules mcp gateway_entry.py
+      - name: Verify the EXE files exist
+        shell: pwsh
+        run: |
+          $expected = @(
+            "dist/LUMAVUN-Trade-Server.exe",
+            "dist/LUMAVUN-SMC-Research.exe",
+            "dist/Lumavun-MT5-MCP.exe",
+            "dist/Lumavun-MT5-Gateway.exe"
+          )
+          foreach ($item in $expected) {
+            if (-not (Test-Path $item)) { throw "Missing EXE: $item" }
+            Write-Host "$item ($(Get-Item $item).Length bytes)"
+          }
+      - name: Publish Windows EXE artifact (not a release)
+        uses: actions/upload-artifact@v4
+        with:
+          name: Lumavun-SMC-Windows-${{ github.sha }}
+          path: |
+            dist/LUMAVUN-Trade-Server.exe
+            dist/LUMAVUN-SMC-Research.exe
+            dist/Lumavun-MT5-MCP.exe
+            dist/Lumavun-MT5-Gateway.exe
+          retention-days: 14
+          if-no-files-found: error
