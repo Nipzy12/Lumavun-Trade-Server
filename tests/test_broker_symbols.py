@@ -6,7 +6,7 @@ from lumavun.config import Settings
 from lumavun.symbols import match_symbol, SymbolResolutionError, SymbolMatch
 
 
-@pytest.mark.parametrize(("request","catalog","chosen"),[
+@pytest.mark.parametrize(("requested","catalog","chosen"),[
     ("XAUUSD",["EURUSD","XAUUSDm"],"XAUUSDm"),
     ("XAUUSD",["XAUUSDc"],"XAUUSDc"),
     ("XAUUSD",["XAUUSD.pro"],"XAUUSD.pro"),
@@ -16,8 +16,8 @@ from lumavun.symbols import match_symbol, SymbolResolutionError, SymbolMatch
     ("BTCUSD",["BTCUSDm"],"BTCUSDm"),
     ("EURUSD",["EUR/USD"],"EUR/USD"),
 ])
-def test_unique_valid_variants(request,catalog,chosen):
-    match=match_symbol(request,catalog)
+def test_unique_valid_variants(requested,catalog,chosen):
+    match=match_symbol(requested,catalog)
     assert match.resolved==chosen and match.changed
 
 
