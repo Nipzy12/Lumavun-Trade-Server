@@ -66,7 +66,7 @@ def _bias(htf, at_time):
         return "SELL"
     return None
 
-def _candidate(bars, htf):
+def _candidate(bars, htf, context_cache=None):
     if not _valid(bars) or not _valid(htf):
         return []
     i = len(bars)-1
@@ -74,9 +74,11 @@ def _candidate(bars, htf):
     atr = _atr(bars)
     if atr <= 0:
         return []
-    side = _bias(htf, now["time"])
-    if side is None:
+    from .smc_htf import context as h4_context
+    h4 = h4_context(htf, bars, int(now["time"]), cache=context_cache)
+    if h4.poi is None or h4.poi.side != h4.bias or h4.bias not in (-1, 1):
         return []
+    side = "BUY" if h4.bias == 1 else "SELL"
     sign = 1 if side == "BUY" else -1
     body = abs(now["close"]-now["open"])
     span = now["high"]-now["low"]
@@ -117,8 +119,12 @@ def _candidate(bars, htf):
             if .04*atr <= zone[1]-zone[0] <= 2.2*atr:
                 candidates.append(("M2",zone,87,"Close-confirmed BOS + opposite OB + nearby FVG"))
     # M3: displacement FVG
-    if fvg and body >= atr:
-        candidates.append(("M3",fvg,85,"Three-candle FVG + displacement"))
+    middle = bars[i-1]
+    middle_body = abs(middle["close"]-middle["open"])
+    middle_range = middle["high"]-middle["low"]
+    if (fvg and middle_range > 0 and middle_body/middle_range >= .60 and
+        middle_body >= _atr(bars[:-1])):
+        candidates.append(("M3",fvg,85,"Three-candle FVG + middle displacement"))
     result=[]
     for model,zone,score,reason in candidates:
         entry = zone[1] if sign==1 else zone[0]  # proximal
@@ -132,9 +138,9 @@ def _candidate(bars, htf):
             result.append(Setup(model,side,entry,stop,tp,score,int(now["time"]),reason))
     return result
 
-def evaluate(bars, htf, model="AUTO"):
+def evaluate(bars, htf, model="AUTO", context_cache=None):
     """Return best current candidate or None; AUTO priority is M1 > M2 > M3."""
-    choices=_candidate(bars,htf)
+    choices=_candidate(bars,htf,context_cache)
     if model != "AUTO":
         choices=[c for c in choices if c.model==model]
     return choices[0] if choices else None
@@ -149,6 +155,9 @@ def backtest(bars, htf, model="AUTO", spread=0.0, expiry=40):
         raise ValueError("Need >=35 ordered, valid closed candles on both timeframes")
     if spread < 0 or expiry < 1:
         raise ValueError("Invalid spread/expiry")
+    from bisect import bisect_right
+    htf_times=[int(b["time"]) for b in htf]
+    context_cache={}
     trades=[]
     pending=None
     active=None
@@ -192,7 +201,9 @@ def backtest(bars, htf, model="AUTO", spread=0.0, expiry=40):
                     pending=None
         if not active and not pending and not exited_this_bar:
             # Candidate formed at this bar close; next bar first eligible for fill.
-            candidate=evaluate(bars[:i+1],htf,model)
+            cutoff=bisect_right(htf_times,int(b["time"]))
+            history_htf=htf[max(0,cutoff-350):cutoff]
+            candidate=evaluate(bars[max(0,i-350):i+1],history_htf,model,context_cache)
             if candidate:
                 pending={"setup":candidate,"created":i}
     total=sum(t["r"] for t in trades)
@@ -246,7 +257,7 @@ def walk_forward(bars, htf, spread=0.0, train_fraction=0.7, minimum_trades=30):
                 "holdout":None,"reason":"Insufficient training trades; no model selected"}
     # Prefix is context only. Discard entries before the split from holdout metrics.
     # Replay starts from 35 prior candles; all entries at/after split are included.
-    holdout_start=max(0,split-35)
+    holdout_start=max(0,split-350)
     test=backtest(bars[holdout_start:],htf,selected,spread)
     filtered=[t for t in test["history"] if t["entry_time"]>=bars[split]["time"]]
     return {"selected_model":selected,"train":train,
