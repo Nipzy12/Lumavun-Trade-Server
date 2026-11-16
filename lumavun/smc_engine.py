@@ -53,9 +53,16 @@ def _quality(impulse_atr, body_efficiency, structure_ok, htf_ok, confluence, cle
 
 
 def _fvg(bars, i, side, atr):
-    if i < 2 or atr <= 0:
+    if i < 16 or atr <= 0:
         return None
     a, c = bars[i-2], bars[i]
+    middle=bars[i-1]
+    body=abs(middle["close"]-middle["open"])
+    width=middle["high"]-middle["low"]
+    previous_atr=_atr(bars[:i])
+    if (previous_atr<=0 or width<=0 or body/width<.60 or
+        body<previous_atr):
+        return None
     if side == "BUY" and c["low"] > a["high"] and c["low"]-a["high"] >= .12*atr:
         return (a["high"], c["low"])
     if side == "SELL" and c["high"] < a["low"] and a["low"]-c["high"] >= .12*atr:
