@@ -10,7 +10,7 @@ from PySide6.QtWidgets import (
     QMainWindow, QMessageBox, QPlainTextEdit, QPushButton, QSpinBox,
     QTabWidget, QVBoxLayout, QWidget,
 )
-from .config import Settings, PROVIDER_URLS, put_api_key
+from .config import Settings, PROVIDER_URLS, put_api_key, SMC_MODELS
 from .gateway_auth import save_remote_key, save_native_api_key, validate_endpoint
 from .mt5_access import gateway_call
 from .native_mt5 import inspect_connection
@@ -285,6 +285,15 @@ class Window(QMainWindow):
         self.timeframe.setCurrentText(self.cfg.timeframe)
         symbols.addWidget(self.timeframe, 1)
         editor.layout_body.addLayout(symbols)
+        editor.layout_body.addWidget(hint("Strategy templates (editable; no automatic execution)"))
+        self.strategy_preset = QComboBox()
+        self.strategy_preset.addItems(SMC_MODELS.keys())
+        self.strategy_preset.currentTextChanged.connect(self.apply_strategy_preset)
+        editor.layout_body.addWidget(self.strategy_preset)
+        editor.layout_body.addWidget(hint(
+            "Selecting a preset replaces the editor text. Manual / Custom leaves your text unchanged. "
+            "Review and click Save Strategy to persist."
+        ))
         editor.layout_body.addWidget(hint("Natural-language strategy"))
         self.strategy = QPlainTextEdit(self.cfg.strategy)
         self.strategy.setMinimumHeight(310)
@@ -685,6 +694,12 @@ class Window(QMainWindow):
         elif models:
             self.model.setCurrentIndex(0)
         self.log("Fetched " + str(len(models)) + " available models. Save the selected model to use it.")
+
+    def apply_strategy_preset(self, name):
+        template = SMC_MODELS.get(name)
+        if template is not None:
+            self.strategy.setPlainText(template)
+            self.log("SMC template loaded for editing: " + name + ". Click Save Strategy to persist.")
 
     def save_strategy(self):
         cfg = Settings.load()
