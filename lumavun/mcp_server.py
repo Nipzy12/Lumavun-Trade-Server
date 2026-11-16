@@ -2,7 +2,7 @@
 from __future__ import annotations
 from mcp.server.fastmcp import FastMCP
 from .config import Settings
-from .mt5_bridge import account_status, list_positions, get_candles, preview_order, execute_order
+from .mt5_bridge import account_status, list_positions, get_candles, preview_order, execute_order, broker_symbols
 from .risk import OrderIntent
 
 mcp = FastMCP("LUMAVUN MT5", instructions=(
@@ -19,6 +19,11 @@ def mt5_account() -> dict:
 def mt5_positions() -> list[dict]:
     """Read open positions, including SL and TP."""
     return list_positions()
+
+@mcp.tool()
+def mt5_symbols() -> list[str]:
+    """List exact available instrument names from this account's broker catalog."""
+    return broker_symbols()
 
 @mcp.tool()
 def mt5_candles(symbol: str, timeframe: str = "M15", count: int = 60) -> list[dict]:
