@@ -43,6 +43,15 @@ def _atr(bars, period=14):
               abs(b["low"]-bars[i-1]["close"])) for i,b in enumerate(bars) if i]
     return sum(tr[-period:])/period if len(tr) >= period else 0
 
+def _quality(impulse_atr, body_efficiency, structure_ok, htf_ok, confluence, clean):
+    """Pine v6 source heuristic weights; >=85 required for strict mode."""
+    impulse=(25 if impulse_atr>=1.25 else 20 if impulse_atr>=1.0
+             else 10 if impulse_atr>=0.65 else 0)
+    body=(15 if body_efficiency>=0.70 else 10 if body_efficiency>=0.60 else 0)
+    return (impulse+body+20*int(structure_ok)+15*int(htf_ok)+
+            15*int(confluence)+10*int(clean))
+
+
 def _fvg(bars, i, side, atr):
     if i < 2 or atr <= 0:
         return None
@@ -121,7 +130,11 @@ def _candidate(bars, htf, context_cache=None, prevalidated=False):
     if sweep and breakout and displacement:
         zone = fvg
         if zone:
-            candidates.append(("M1",zone,90,"Sweep + confirmed structural close + FVG"))
+            score=_quality(body/atr,body/span,True,True,True,
+                           now["close"]>zone[1]+.08*atr if sign==1
+                           else now["close"]<zone[0]-.08*atr)
+            if score>=85:
+                candidates.append(("M1",zone,score,"Sweep + confirmed structural close + FVG"))
     # M2: recent opposite-body OB and FVG within 6 bars of BOS.
     if breakout and displacement:
         fvgs = [(j,_fvg(bars,j,side,atr)) for j in range(max(2,i-6),i+1)]
@@ -131,13 +144,26 @@ def _candidate(bars, htf, context_cache=None, prevalidated=False):
         if fvgs and origin:
             zone = (origin["low"],origin["high"])
             if .04*atr <= zone[1]-zone[0] <= 2.2*atr:
-                candidates.append(("M2",zone,87,"Close-confirmed BOS + opposite OB + nearby FVG"))
+                clean=(now["close"]>zone[1]+.08*atr if sign==1
+                       else now["close"]<zone[0]-.08*atr)
+                score=_quality(body/atr,body/span,True,True,True,clean)
+                if clean and score>=85:
+                    candidates.append(("M2",zone,score,"Close-confirmed BOS + opposite OB + nearby FVG"))
     # M3: displacement FVG
     middle = bars[i-1]
     middle_body = abs(middle["close"]-middle["open"])
     middle_range = middle["high"]-middle["low"]
     if fvg and mid_displacement:
-        candidates.append(("M3",fvg,85,"Three-candle FVG + middle displacement"))
+        mid_atr=_atr(bars[:-1])
+        directional=(now["close"]>bars[i-6]["close"] if sign==1
+                     else now["close"]<bars[i-6]["close"])
+        confluence=breakout or sweep
+        clean=(now["close"]>(now["high"]+now["low"])/2 if sign==1
+               else now["close"]<(now["high"]+now["low"])/2)
+        score=_quality(mid_body/mid_atr if mid_atr>0 else 0.0,
+                       mid_body/mid_span, directional, True, confluence, clean)
+        if score>=85:
+            candidates.append(("M3",fvg,score,"Three-candle FVG + middle displacement"))
     result=[]
     for model,zone,score,reason in candidates:
         entry = zone[1] if sign==1 else zone[0]  # proximal
