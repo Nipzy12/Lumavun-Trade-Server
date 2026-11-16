@@ -154,6 +154,7 @@ def backtest(bars, htf, model="AUTO", spread=0.0, expiry=40):
     active=None
     for i in range(35,len(bars)):
         b=bars[i]
+        exited_this_bar = False
         if active:
             s=active["setup"]
             stop_hit=b["low"]<=s.sl if s.side=="BUY" else b["high"]>=s.sl
@@ -167,17 +168,16 @@ def backtest(bars, htf, model="AUTO", spread=0.0, expiry=40):
                                "exit_time":b["time"],"r":round(r,6),
                                "outcome":"SL" if stop_hit else "TP"})
                 active=None
+                exited_this_bar = True
         if pending and not active:
             s=pending["setup"]
             age=i-pending["created"]
             if age>expiry:
                 pending=None
             else:
-                # Cancel on invalidating close before any new order.
+                # Intrabar order is unknown: fill and stop take precedence over close cancellation.
                 invalid=(b["close"]<s.sl if s.side=="BUY" else b["close"]>s.sl)
-                if invalid:
-                    pending=None
-                elif b["low"]<=s.entry<=b["high"]:
+                if b["low"]<=s.entry<=b["high"]:
                     active={"setup":s,"time":b["time"]}
                     pending=None
                     # Conservative same-bar stop after entry, never same-bar TP.
@@ -187,7 +187,10 @@ def backtest(bars, htf, model="AUTO", spread=0.0, expiry=40):
                                        "exit_time":b["time"],"r":round(-1-spread/abs(s.entry-s.sl),6),
                                        "outcome":"SL"})
                         active=None
-        if not active and not pending:
+                        exited_this_bar = True
+                elif invalid:
+                    pending=None
+        if not active and not pending and not exited_this_bar:
             # Candidate formed at this bar close; next bar first eligible for fill.
             candidate=evaluate(bars[:i+1],htf,model)
             if candidate:
@@ -204,6 +207,8 @@ def backtest(bars, htf, model="AUTO", spread=0.0, expiry=40):
     positive=sum(max(0,t["r"]) for t in trades)
     negative=-sum(min(0,t["r"]) for t in trades)
     return {"model":model,"trades":len(trades),"wins":wins,
+            "open_position_at_end":active is not None,
+            "pending_order_at_end":pending is not None,
             "win_rate":wins/len(trades) if trades else None,
             "total_r":round(total,4),
             "expectancy_r":round(total/len(trades),4) if trades else None,
@@ -218,3 +223,49 @@ def compare_models(bars,htf,spread=0.0):
     return {"results":results,"best_historical_model":winner,
             "minimum_trades_for_ranking":30,
             "warning":"Illustrative OHLC replay, not broker execution or out-of-sample validation."}
+
+def walk_forward(bars, htf, spread=0.0, train_fraction=0.7, minimum_trades=30):
+    """Select on train only, then report holdout independently.
+
+    The holdout retains warm-up price history for indicator context but its
+    accounting is restricted to entries signaled after the split.
+    No guarantee of predictive performance.
+    """
+    if not _valid(bars) or not _valid(htf):
+        raise ValueError("Need ordered valid closed OHLC history")
+    if not .5 <= train_fraction <= .85:
+        raise ValueError("train_fraction must be between 0.5 and 0.85")
+    split=int(len(bars)*train_fraction)
+    if split < 35 or len(bars)-split < 35:
+        raise ValueError("Insufficient bars for train/holdout")
+    train=compare_models(bars[:split],htf,spread)
+    eligible=[r for r in train["results"] if r["model"]!="AUTO" and r["trades"]>=minimum_trades]
+    selected=max(eligible,key=lambda r:(r["expectancy_r"],-r["max_drawdown_r"]))["model"] if eligible else None
+    if selected is None:
+        return {"selected_model":None,"train":train,
+                "holdout":None,"reason":"Insufficient training trades; no model selected"}
+    # Prefix is context only. Discard entries before the split from holdout metrics.
+    # Replay starts from 35 prior candles; all entries at/after split are included.
+    holdout_start=max(0,split-35)
+    test=backtest(bars[holdout_start:],htf,selected,spread)
+    filtered=[t for t in test["history"] if t["entry_time"]>=bars[split]["time"]]
+    return {"selected_model":selected,"train":train,
+            "holdout":_summarize_trades(selected,filtered),
+            "split_time":bars[split]["time"],
+            "warning":"Single chronological holdout, not nested walk-forward optimization."}
+
+def _summarize_trades(model,trades):
+    total=sum(t["r"] for t in trades)
+    gross_profit=sum(max(0,t["r"]) for t in trades)
+    gross_loss=-sum(min(0,t["r"]) for t in trades)
+    equity=peak=dd=0.0
+    for t in trades:
+        equity+=t["r"]
+        peak=max(peak,equity)
+        dd=max(dd,peak-equity)
+    return {"model":model,"trades":len(trades),
+            "win_rate":sum(t["r"]>0 for t in trades)/len(trades) if trades else None,
+            "total_r":round(total,4),
+            "expectancy_r":round(total/len(trades),4) if trades else None,
+            "profit_factor":round(gross_profit/gross_loss,4) if gross_loss else None,
+            "max_drawdown_r":round(dd,4),"history":trades}
