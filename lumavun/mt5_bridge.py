@@ -2,6 +2,8 @@
 from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from dataclasses import asdict
+from pathlib import Path
+import os
 import math
 import time
 from filelock import FileLock
@@ -38,7 +40,19 @@ def _api():
 
 def _connected():
     mt5 = _api()
-    if not mt5.initialize():
+    selected = Settings.load().mt5_terminal_path.strip()
+    if selected:
+        path = Path(selected)
+        if not path.is_absolute() or path.name.lower() != "terminal64.exe" or not path.is_file():
+            raise RuntimeError("Selected MT5 path must point to an existing terminal64.exe")
+        if not mt5.initialize(path=str(path)):
+            raise RuntimeError("Selected MT5 initialize failed: " + str(mt5.last_error()))
+        info = mt5.terminal_info()
+        actual = str(getattr(info, "path", "") or "")
+        if not actual or os.path.normcase(os.path.realpath(actual)) != os.path.normcase(os.path.realpath(str(path.parent))):
+            mt5.shutdown()
+            raise RuntimeError("MT5 terminal identity mismatch; refusing another installation")
+    elif not mt5.initialize():
         raise RuntimeError("MT5 initialize failed: " + str(mt5.last_error()))
     return mt5
 
