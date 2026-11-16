@@ -44,6 +44,24 @@ def run_strategy_once() -> dict:
     bar_key = cfg.symbol + ":" + cfg.timeframe + ":" + str(candles[-1]["time"])
     if cfg.last_signal_bar == bar_key:
         return {"status": "SKIP", "reason": "Already evaluated the latest closed candle"}
+    if is_smc_preset:
+        from .smc_engine import evaluate
+        strategy = cfg.strategy.lstrip()
+        model = ("M1" if strategy.startswith("Only M1:") else
+                 "M2" if strategy.startswith("Only M2:") else
+                 "M3" if strategy.startswith("Only M3:") else "AUTO")
+        try:
+            setup = evaluate(candles, htf_candles, model)
+        except (ValueError, KeyError, TypeError) as exc:
+            return {"status": "DATA_UNAVAILABLE", "reason": "SMC evaluation: " + str(exc)}
+        fresh = Settings.load()
+        fresh.last_signal_bar = bar_key
+        fresh.save()
+        if setup is None:
+            return {"status": "HOLD", "reason": "No deterministic SMC setup meets model and H4 filters."}
+        return {"status": "SIGNAL_ONLY", "reason": setup.reason,
+                "proposal": setup.to_dict(),
+                "note": "Deterministic SMC research signal; order execution disabled."}
     intent, reason = propose_trade(cfg, candles, htf_candles)
     # Never retry this candle automatically, including rejected proposals.
     fresh = Settings.load()
