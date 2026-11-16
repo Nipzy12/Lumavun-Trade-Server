@@ -96,7 +96,11 @@ def _strip_decoration(symbol: str) -> str:
         s = s[:match.start()]
     else:
         for postfix in PLAIN_SUFFIXES:
-            if len(s) <= len(postfix) or not s.lower().endswith(postfix):
+            # Undelimited account suffixes must be literally lowercase.
+            # USDZAR ends with uppercase R, but R is part of the forex pair,
+            # not a "raw" suffix. Uppercase suffix-like names require exact
+            # manual selection instead of risking cross-instrument mapping.
+            if len(s) <= len(postfix) or not symbol.endswith(postfix):
                 continue
             root = s[:-len(postfix)]
             if not KNOWN_BASE.fullmatch(root):
