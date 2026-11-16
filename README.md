@@ -193,3 +193,12 @@ execution. If data remain unavailable, the AI scan returns
 
 Do not use MetaTrader.com's separate marketdata MCP for this fallback: it
 may not support M1/M5/M15 and is not necessarily the user's broker feed.
+
+## Optional Windows CMD MetaTrader5 installer
+
+The MT5 MCP tab now has a PYTHON MT5 PACKAGE panel with Open CMD / Install MetaTrader5 and Copy pip command.
+Clicking Install opens CMD and executes py -3 -m pip install --upgrade MetaTrader5 (or python -m pip if the Windows Python Launcher is absent).
+No install runs without explicit button click; the command text is fixed and is not constructed from user input.
+The correct official package name on PyPI is MetaTrader5, NOT mt5. It requires a compatible Windows Python runtime, typically x64, and a MetaTrader 5 terminal.
+Important: LUMAVUN's frozen PyInstaller EXE already bundles MetaTrader5. Pip installs it into a separate system Python interpreter and cannot repair DLLs inside the EXE.
+Official documentation: https://www.mql5.com/en/docs/python_metatrader5

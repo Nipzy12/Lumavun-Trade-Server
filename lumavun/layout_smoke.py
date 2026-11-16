@@ -43,6 +43,9 @@ def self_test_premium_ui(report_path: str) -> int:
             assert preview.stat().st_size > 2500, "Blank " + short + " screenshot"
             screenshots[short] = preview.name
 
+        assert win.mt5_install_button.isEnabled()
+        assert "Install MetaTrader5" in win.mt5_install_button.text()
+        assert "pip install --upgrade MetaTrader5" in win.mt5_install_command.text()
         # URL/API-key/connection mode controls must NEVER overlap or collapse.
         win.tabs.setCurrentIndex(5)
         app.processEvents()

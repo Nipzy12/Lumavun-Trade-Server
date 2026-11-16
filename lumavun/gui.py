@@ -14,6 +14,7 @@ from .config import Settings, PROVIDER_URLS, put_api_key
 from .gateway_auth import save_remote_key, save_native_api_key, validate_endpoint
 from .mt5_access import gateway_call
 from .native_mt5 import inspect_connection
+from .mt5_installer import PY_LAUNCHER_COMMAND, open_install_cmd
 from .ai import discover_models
 from .engine import run_strategy_once
 from .mt5_access import account_status, list_positions
@@ -474,10 +475,49 @@ class Window(QMainWindow):
             "mt5_order_preview • mt5_place_order. They are distinct from MetaTrader native tools."
         ))
         page.add(sample_panel)
+        installer_panel = PremiumPanel(
+            "05  /  PYTHON MT5 PACKAGE",
+            "Optional Windows Python integration, separate from packaged EXE dependencies.",
+            accent="violet"
+        )
+        installer_panel.layout_body.addWidget(hint(
+            "EXE LUMAVUN sudah menyertakan MetaTrader5. Perintah CMD ini hanya memasang "
+            "pustaka pada Python Windows terpisah, tidak memperbaiki modul dalam EXE."
+        ))
+        self.mt5_install_command = QLineEdit(PY_LAUNCHER_COMMAND)
+        self.mt5_install_command.setReadOnly(True)
+        installer_panel.layout_body.addWidget(self.mt5_install_command)
+        install_buttons = QHBoxLayout()
+        self.mt5_install_button = QPushButton("Open CMD / Install MetaTrader5")
+        self.mt5_install_button.setObjectName("primaryButton")
+        self.mt5_install_button.clicked.connect(self.install_mt5_package)
+        install_buttons.addWidget(self.mt5_install_button)
+        copy_button = QPushButton("Copy pip command")
+        copy_button.setObjectName("secondaryButton")
+        copy_button.clicked.connect(self.copy_mt5_install_command)
+        install_buttons.addWidget(copy_button)
+        installer_panel.layout_body.addLayout(install_buttons)
+        installer_panel.layout_body.addWidget(hint(
+            "Instalasi hanya dimulai saat tombol diklik. Terminal MetaTrader 5 tetap wajib terpasang."
+        ))
+        page.add(installer_panel)
         page.end()
         self.tabs.addTab(page, "◇  MT5 MCP")
         self.refresh_mcp_arming()
 
+    def install_mt5_package(self):
+        try:
+            command = open_install_cmd()
+        except (RuntimeError, OSError) as exc:
+            QMessageBox.warning(self, "MT5 Python Installer", str(exc))
+            self.log("CMD MT5 installer gagal: " + str(exc))
+            return
+        self.log("Installer CMD dibuka: " + command
+                 + ". Lihat output pip di CMD. EXE LUMAVUN tidak berubah.")
+
+    def copy_mt5_install_command(self):
+        QApplication.clipboard().setText(self.mt5_install_command.text())
+        self.log("Perintah pip MetaTrader5 disalin.")
     def set_native_candle_fallback(self, checked):
         cfg = Settings.load()
         cfg.native_local_candle_fallback = bool(checked)
