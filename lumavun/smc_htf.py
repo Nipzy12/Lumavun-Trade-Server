@@ -138,7 +138,7 @@ def context(htf: list[dict], ltf: list[dict], at_time: int,
     length = bisect_right(times, int(at_time) - 14400)
     if length < 35:
         return H4Context(0, None, False, "H4_NOT_CLOSED")
-    key = (length, poi_type)
+    key = (int(htf[length - 1]["time"]), poi_type)
     if cache is not None and key in cache:
         trend, poi = cache[key]
     else:
@@ -148,7 +148,7 @@ def context(htf: list[dict], ltf: list[dict], at_time: int,
         trend, poi = _historical_state(htf[begin:length], poi_type, 3, 12, .12, 1.0)
         if cache is not None:
             cache[key] = trend, poi
-    if poi is None:
+    if poi is None or poi.top <= poi.bottom:
         return H4Context(trend, None, False, "NO_ACTIVE_POI")
     # Check all available LTF bars since this POI was confirmed. Unknown prior
     # history cannot establish freshness, so fail closed when truncated.
