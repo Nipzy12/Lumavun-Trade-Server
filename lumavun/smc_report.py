@@ -51,9 +51,6 @@ def main():
     start=utc_date(args.start) if dates_mode else None
     end=utc_date(args.end) if dates_mode else None
     actual_symbol=args.symbol
-    if not csv_mode:
-        from .mt5_bridge import resolve_broker_symbol
-        actual_symbol=resolve_broker_symbol(args.symbol).resolved
     if csv_mode:
         entry=read_csv(args.entry_csv,args.timeframe)
         htf=read_csv(args.h4_csv,"H4")
@@ -61,12 +58,14 @@ def main():
     else:
         if cfg.mt5_mode!="local":
             parser.error("MT5 historical research currently requires Local MT5 Terminal mode")
+        from .mt5_bridge import resolve_broker_symbol
+        actual_symbol=resolve_broker_symbol(args.symbol).resolved
         if dates_mode:
             entry=fetch_mt5_range(actual_symbol,args.timeframe,start,end)
-            htf=fetch_mt5_range(args.symbol,"H4",start,end)
+            htf=fetch_mt5_range(actual_symbol,"H4",start,end)
         else:
             entry=get_candles(actual_symbol,args.timeframe,args.count,cfg)
-            htf=get_candles(args.symbol,"H4",500,cfg)
+            htf=get_candles(actual_symbol,"H4",500,cfg)
         source="LOCAL_MT5"
     if args.export_csv_dir:
         destination=Path(args.export_csv_dir)
