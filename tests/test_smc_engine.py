@@ -1,6 +1,6 @@
 """Offline tests for conservative SMC replay; no MetaTrader installation required."""
 import unittest
-from lumavun.smc_engine import evaluate, backtest, compare_models
+from lumavun.smc_engine import evaluate, backtest, compare_models, walk_forward
 
 def bars(n=120, start=1700000000, step=900):
     out=[]
@@ -30,6 +30,15 @@ class SMCResearchTests(unittest.TestCase):
 
     def test_no_setup_without_confirmed_h4(self):
         self.assertIsNone(evaluate(bars(),bars(60,start=1800000000,step=14400)))
+
+    def test_walk_forward_no_model_with_insufficient_sample(self):
+        report=walk_forward(bars(120),bars(60,step=14400))
+        self.assertIsNone(report["selected_model"])
+        self.assertIsNone(report["holdout"])
+
+    def test_walk_forward_rejects_bad_split(self):
+        with self.assertRaises(ValueError):
+            walk_forward(bars(120),bars(60,step=14400),train_fraction=.9)
 
     def test_empty_history_metrics(self):
         report=backtest(bars(),bars(60,step=14400))
