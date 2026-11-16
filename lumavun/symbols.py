@@ -128,11 +128,12 @@ def matches_canonical(requested: str, actual: str) -> bool:
 
 
 def is_generic(symbol: str) -> bool:
-    s = symbol.strip().upper()
-    # Once user enters an explicit .suffix / m / c / pro symbol, require exact.
+    s = symbol.strip()
+    # Preserve suffix letter-case during canonical parsing.
+    # XAUUSDm is an EXPLICIT account tier, but USDZAR is a generic FX pair.
     if not NAME.fullmatch(s):
         return False
-    return s in ALIASES or canonical(s) == s
+    return s.upper() in ALIASES or canonical(s) == s.upper()
 
 
 def candidate_symbols(query: str, catalogue: list[dict]) -> list[dict]:
