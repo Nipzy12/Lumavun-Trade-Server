@@ -387,6 +387,11 @@ class Window(QMainWindow):
         )
         self.mt5_mode.currentIndexChanged.connect(self.connection_mode_changed)
         form.addRow("Connection mode", self.mt5_mode)
+        self.mt5_terminal_path = QLineEdit(self.cfg.mt5_terminal_path)
+        self.mt5_terminal_path.setPlaceholderText(
+            r"C:\Program Files\MT5 - 2\terminal64.exe"
+        )
+        form.addRow("Local MT5 terminal64.exe", self.mt5_terminal_path)
         self.mt5_url = QLineEdit(
             self.cfg.mt5_native_url if self.cfg.mt5_mode == "mt5_native"
             else self.cfg.mt5_mcp_url
@@ -552,6 +557,17 @@ class Window(QMainWindow):
         cfg = Settings.load()
         cfg.mt5_mode = self.mt5_mode.currentData()
         entered_url = self.mt5_url.text().strip()
+        terminal_path = self.mt5_terminal_path.text().strip().strip('"')
+        if terminal_path:
+            from pathlib import Path
+            candidate = Path(terminal_path)
+            if not candidate.is_absolute() or candidate.name.lower() != "terminal64.exe" or not candidate.is_file():
+                self.log("Invalid local terminal path: choose an existing terminal64.exe")
+                return False
+        if terminal_path != cfg.mt5_terminal_path:
+            cfg.execution_enabled = False
+            cfg.live_allowed = False
+        cfg.mt5_terminal_path = terminal_path
         try:
             if cfg.mt5_mode == "mt5_native":
                 cfg.mt5_native_url = validate_endpoint(entered_url)
