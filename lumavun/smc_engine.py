@@ -17,6 +17,8 @@ class Setup:
     score: int
     signal_time: int
     reason: str
+    zone_bottom: float = 0.0
+    zone_top: float = 0.0
 
     def to_dict(self):
         return asdict(self)
@@ -66,31 +68,43 @@ def _bias(htf, at_time):
         return "SELL"
     return None
 
-def _candidate(bars, htf, context_cache=None):
-    if not _valid(bars) or not _valid(htf):
+def _candidate(bars, htf, context_cache=None, prevalidated=False):
+    if len(bars) < 35 or len(htf) < 35:
+        return []
+    if not prevalidated and (not _valid(bars) or not _valid(htf)):
         return []
     i = len(bars)-1
     now = bars[i]
     atr = _atr(bars)
     if atr <= 0:
         return []
+    body = abs(now["close"]-now["open"])
+    span = now["high"]-now["low"]
+    mid = bars[i-1]
+    mid_span = mid["high"]-mid["low"]
+    mid_body = abs(mid["close"]-mid["open"])
+    mid_displacement = mid_span > 0 and mid_body/mid_span >= .60 and mid_body >= _atr(bars[:-1])
+    prev = bars[i-21:i]
+    swing_high = max(b["high"] for b in prev)
+    swing_low = min(b["low"] for b in prev)
+    possible_bull = now["close"] > swing_high+.06*atr
+    possible_bear = now["close"] < swing_low-.06*atr
+    raw_fvg_bull = _fvg(bars,i,"BUY",atr)
+    raw_fvg_bear = _fvg(bars,i,"SELL",atr)
+    # Short-circuit the expensive HTF zone/freshness check on non-signal bars.
+    if not ((span > 0 and body/span >= .60 and body >= .70*atr and
+             (possible_bull or possible_bear)) or
+            (mid_displacement and (raw_fvg_bull or raw_fvg_bear))):
+        return []
     from .smc_htf import context as h4_context
     h4 = h4_context(htf, bars, int(now["time"]), cache=context_cache)
     if h4.poi is None or h4.poi.side != h4.bias or h4.bias not in (-1, 1):
         return []
     side = "BUY" if h4.bias == 1 else "SELL"
-    sign = 1 if side == "BUY" else -1
-    body = abs(now["close"]-now["open"])
-    span = now["high"]-now["low"]
-    if span <= 0 or body/span < .60:
-        return []
-    prev = bars[i-21:i]
-    swing_high = max(b["high"] for b in prev)
-    swing_low = min(b["low"] for b in prev)
-    breakout = (now["close"] > swing_high+.06*atr if sign==1
-                else now["close"] < swing_low-.06*atr)
-    displacement = body >= .70*atr
-    fvg = _fvg(bars,i,side,atr)
+    sign = h4.bias
+    breakout = possible_bull if sign == 1 else possible_bear
+    displacement = body >= .70*atr and span > 0 and body/span >= .60
+    fvg = raw_fvg_bull if sign == 1 else raw_fvg_bear
     candidates = []
     # M1: find earlier confirmed sweep of opposite liquidity, followed by shift.
     sweep = False
@@ -122,8 +136,7 @@ def _candidate(bars, htf, context_cache=None):
     middle = bars[i-1]
     middle_body = abs(middle["close"]-middle["open"])
     middle_range = middle["high"]-middle["low"]
-    if (fvg and middle_range > 0 and middle_body/middle_range >= .60 and
-        middle_body >= _atr(bars[:-1])):
+    if fvg and mid_displacement:
         candidates.append(("M3",fvg,85,"Three-candle FVG + middle displacement"))
     result=[]
     for model,zone,score,reason in candidates:
@@ -135,12 +148,12 @@ def _candidate(bars, htf, context_cache=None):
             continue
         tp=entry+sign*2*dist
         if (sign==1 and stop < entry < tp) or (sign==-1 and tp < entry < stop):
-            result.append(Setup(model,side,entry,stop,tp,score,int(now["time"]),reason))
+            result.append(Setup(model,side,entry,stop,tp,score,int(now["time"]),reason,zone[0],zone[1]))
     return result
 
-def evaluate(bars, htf, model="AUTO", context_cache=None):
+def evaluate(bars, htf, model="AUTO", context_cache=None, prevalidated=False):
     """Return best current candidate or None; AUTO priority is M1 > M2 > M3."""
-    choices=_candidate(bars,htf,context_cache)
+    choices=_candidate(bars,htf,context_cache,prevalidated)
     if model != "AUTO":
         choices=[c for c in choices if c.model==model]
     return choices[0] if choices else None
@@ -185,7 +198,10 @@ def backtest(bars, htf, model="AUTO", spread=0.0, expiry=40):
                 pending=None
             else:
                 # Intrabar order is unknown: fill and stop take precedence over close cancellation.
-                invalid=(b["close"]<s.sl if s.side=="BUY" else b["close"]>s.sl)
+                # Pine-style close break of zone edge (not the stop price).
+                buffer=.03*_atr(bars[:i+1])
+                invalid=(b["close"]<s.zone_bottom-buffer if s.side=="BUY"
+                         else b["close"]>s.zone_top+buffer)
                 if b["low"]<=s.entry<=b["high"]:
                     active={"setup":s,"time":b["time"]}
                     pending=None
@@ -203,7 +219,7 @@ def backtest(bars, htf, model="AUTO", spread=0.0, expiry=40):
             # Candidate formed at this bar close; next bar first eligible for fill.
             cutoff=bisect_right(htf_times,int(b["time"]))
             history_htf=htf[max(0,cutoff-350):cutoff]
-            candidate=evaluate(bars[max(0,i-350):i+1],history_htf,model,context_cache)
+            candidate=evaluate(bars[max(0,i-350):i+1],history_htf,model,context_cache,True)
             if candidate:
                 pending={"setup":candidate,"created":i}
     total=sum(t["r"] for t in trades)
