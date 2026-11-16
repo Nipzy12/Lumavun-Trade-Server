@@ -102,13 +102,15 @@ def _extract(content: str, symbol: str) -> tuple[OrderIntent | None, str]:
         raise AIError("Invalid SL or TP")
     return OrderIntent(symbol, side, sl, tp), reason
 
-def propose_trade(cfg: Settings, candles: list[dict]) -> tuple[OrderIntent | None, str]:
+def propose_trade(cfg: Settings, candles: list[dict], htf_candles: list[dict] | None = None) -> tuple[OrderIntent | None, str]:
     if not cfg.model.strip():
         raise AIError("Select or enter a provider model first")
     if len(candles) < 10:
         raise AIError("At least 10 closed candles are required")
     payload = json.dumps({"symbol": cfg.symbol, "timeframe": cfg.timeframe,
-                          "strategy": cfg.strategy, "closed_candles": candles},
+                          "strategy": cfg.strategy, "closed_candles": candles,
+                          "htf_timeframe": "H4" if htf_candles is not None else None,
+                          "htf_closed_candles": htf_candles},
                          separators=(",", ":"), ensure_ascii=False)
     root = _url(cfg)
     headers = _headers(cfg)
