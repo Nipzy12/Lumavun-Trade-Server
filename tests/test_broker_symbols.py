@@ -26,6 +26,9 @@ def catalog(*symbols):
     ("GOLD", ["XAUUSDm"], "XAUUSDm"),
     ("EURUSD", ["EURUSD.a"], "EURUSD.a"),
     ("GBPUSD", ["GBPUSDm"], "GBPUSDm"),
+    ("AUDCAD", ["AUDCADm"], "AUDCADm"),
+    ("USDZAR", ["USDZAR.pro"], "USDZAR.pro"),
+    ("DOGEUSD", ["DOGEUSDm"], "DOGEUSDm"),
     ("BTCUSD", ["BTCUSDc"], "BTCUSDc"),
     ("US100", ["NAS100m"], "NAS100m"),
     ("US30", ["DJ30.cash"], "DJ30.cash"),
@@ -51,9 +54,12 @@ def test_explicit_broker_suffix_never_switches_account_tier():
 
 def test_no_cross_quote_pair_or_forward_contract_substitution():
     assert not matches_canonical("BTCUSD", "BTCUSDT")
+    assert not matches_canonical("BTCUSD", "BTCUSDC")
     assert not matches_canonical("XAUUSD", "XAUUSDF")
     with pytest.raises(SymbolResolutionError, match="SYMBOL_UNAVAILABLE"):
         resolve_symbol("BTCUSD", catalog("BTCUSDT"))
+    with pytest.raises(SymbolResolutionError, match="SYMBOL_UNAVAILABLE"):
+        resolve_symbol("BTCUSD", catalog("BTCUSDC"))
     with pytest.raises(SymbolResolutionError, match="SYMBOL_UNAVAILABLE"):
         resolve_symbol("XAUUSD", catalog("XAUUSDF"))
 

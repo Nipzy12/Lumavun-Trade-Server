@@ -29,11 +29,9 @@ SUFFIX_PATTERN = re.compile(
     % tuple("|".join(sorted(SUFFIXES, key=len, reverse=True)) for _ in range(3))
 )
 PLAIN_SUFFIXES = tuple(sorted((s for s in SUFFIXES if s not in {"cash", "fx"}), key=len, reverse=True))
-KNOWN_BASE = re.compile(
-    r"^(?:XAUUSD|XAGUSD|BTCUSD|ETHUSD|LTCUSD|XRPUSD|EURUSD|GBPUSD|USDJPY|"
-    r"USDCHF|AUDUSD|USDCAD|NZDUSD|EURJPY|GBPJPY|EURGBP|US30|US100|US500|"
-    r"NAS100|USTEC|SP500|SPX500|DJ30|GOLD|SILVER)$", re.I
-)
+# A broker can decorate any currency pair, crypto CFD, equity or index.
+# Underlying comparison still requires equality AFTER stripping only known tier markers.
+KNOWN_BASE = re.compile(r"^[A-Z0-9]{4,16}$", re.I)
 
 
 class SymbolResolutionError(RuntimeError):
@@ -98,9 +96,18 @@ def _strip_decoration(symbol: str) -> str:
         s = s[:match.start()]
     else:
         for postfix in PLAIN_SUFFIXES:
-            if len(s) > len(postfix) and s.lower().endswith(postfix) and KNOWN_BASE.fullmatch(s[:-len(postfix)]):
-                s = s[:-len(postfix)]
-                break
+            if len(s) <= len(postfix) or not s.lower().endswith(postfix):
+                continue
+            root = s[:-len(postfix)]
+            if not KNOWN_BASE.fullmatch(root):
+                continue
+            # BTCUSDC (USD Coin quote) must not be confused with BTCUSDc
+            # (broker cent suffix). Never silently treat uppercase USDC as USD.
+            if (postfix == "c" and symbol.endswith("C")
+                    and root.endswith("USD")):
+                continue
+            s = root
+            break
     return s
 
 
