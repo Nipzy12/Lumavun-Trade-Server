@@ -62,7 +62,8 @@ def run_strategy_once() -> dict:
         return {"status": "SIGNAL_ONLY", "reason": setup.reason,
                 "proposal": setup.to_dict(),
                 "note": "Deterministic SMC research signal; order execution disabled."}
-    intent, reason = propose_trade(cfg, candles, htf_candles)
+    # Preserve the existing two-argument manual/AI contract.
+    intent, reason = propose_trade(cfg, candles) if htf_candles is None else propose_trade(cfg, candles, htf_candles)
     # Never retry this candle automatically, including rejected proposals.
     fresh = Settings.load()
     fresh.last_signal_bar = bar_key
