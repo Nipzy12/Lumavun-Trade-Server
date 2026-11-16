@@ -50,6 +50,10 @@ def main():
     cfg=Settings.load()
     start=utc_date(args.start) if dates_mode else None
     end=utc_date(args.end) if dates_mode else None
+    actual_symbol=args.symbol
+    if not csv_mode:
+        from .mt5_bridge import resolve_broker_symbol
+        actual_symbol=resolve_broker_symbol(args.symbol).resolved
     if csv_mode:
         entry=read_csv(args.entry_csv,args.timeframe)
         htf=read_csv(args.h4_csv,"H4")
@@ -58,16 +62,16 @@ def main():
         if cfg.mt5_mode!="local":
             parser.error("MT5 historical research currently requires Local MT5 Terminal mode")
         if dates_mode:
-            entry=fetch_mt5_range(args.symbol,args.timeframe,start,end)
+            entry=fetch_mt5_range(actual_symbol,args.timeframe,start,end)
             htf=fetch_mt5_range(args.symbol,"H4",start,end)
         else:
-            entry=get_candles(args.symbol,args.timeframe,args.count,cfg)
+            entry=get_candles(actual_symbol,args.timeframe,args.count,cfg)
             htf=get_candles(args.symbol,"H4",500,cfg)
         source="LOCAL_MT5"
     if args.export_csv_dir:
         destination=Path(args.export_csv_dir)
-        write_csv(destination/(args.symbol+"_"+args.timeframe+".csv"),entry)
-        write_csv(destination/(args.symbol+"_H4.csv"),htf)
+        write_csv(destination/(actual_symbol+"_"+args.timeframe+".csv"),entry)
+        write_csv(destination/(actual_symbol+"_H4.csv"),htf)
     training=compare_models(entry,htf,args.spread)
     validation=walk_forward(entry,htf,args.spread)
     # Capture full count/metrics while bounding the human-readable JSON file.
@@ -76,7 +80,8 @@ def main():
                                      for r in validation["train"]["results"]]
     if validation.get("holdout"):
         validation["holdout"]=_strip_history(validation["holdout"],args.history_limit)
-    report={"research_only":True,"symbol":args.symbol,"timeframe":args.timeframe,
+    report={"research_only":True,"requested_symbol":args.symbol,
+            "symbol":actual_symbol,"timeframe":args.timeframe,
             "source":source,"spread_price_units":args.spread,
             "entry_coverage":coverage(entry,args.timeframe,start,end),
             "h4_coverage":coverage(htf,"H4",start,end),
