@@ -90,9 +90,11 @@ def fetch_mt5_range(symbol: str, interval: str, start: datetime, end: datetime,
         raise ValueError("Start/end must be UTC-aware and increasing")
     from .mt5_bridge import _connected, TIMEFRAMES
     mt5=_connected()
-    if mt5.symbol_info(symbol) is None or not mt5.symbol_select(symbol,True):
-        raise RuntimeError("MT5 symbol unavailable: "+symbol)
-    rates=mt5.copy_rates_range(symbol,getattr(mt5,TIMEFRAMES[interval]),start,end)
+    from .mt5_bridge import resolve_broker_symbol
+    exact = resolve_broker_symbol(symbol, mt5).resolved
+    if not mt5.symbol_select(exact, True):
+        raise RuntimeError("MT5 broker symbol cannot be selected: " + exact)
+    rates=mt5.copy_rates_range(exact,getattr(mt5,TIMEFRAMES[interval]),start,end)
     if rates is None:
         raise RuntimeError("MT5 history download failed: "+str(mt5.last_error()))
     if len(rates) > max_bars:
