@@ -73,6 +73,44 @@ async def _list_tools(url: str, token: str):
                 cursor = next_cursor
             raise NativeMT5Error("Server MCP melebihi 100 halaman tool; daftar tidak lengkap")
 
+def _safe_connection_error(exc: BaseException) -> str:
+    """Summarize nested AnyIO errors without exposing credentials or URLs."""
+    import httpx
+    queue = [exc]
+    seen = set()
+    labels = []
+    while queue and len(seen) < 20:
+        item = queue.pop(0)
+        if id(item) in seen:
+            continue
+        seen.add(id(item))
+        if isinstance(item, BaseExceptionGroup):
+            queue.extend(item.exceptions)
+            continue
+        if isinstance(item, httpx.HTTPStatusError):
+            code = item.response.status_code
+            labels.append(
+                "HTTP " + str(code) + (
+                    " (API key/auth ditolak)" if code in (401, 403) else
+                    " (endpoint tidak ditemukan)" if code == 404 else
+                    " (server MCP menolak permintaan)"
+                )
+            )
+        elif isinstance(item, httpx.ConnectError):
+            labels.append("Koneksi HTTP ditolak atau terputus")
+        elif isinstance(item, (httpx.TimeoutException, TimeoutError)):
+            labels.append("Timeout saat handshake MCP")
+        elif isinstance(item, httpx.RemoteProtocolError):
+            labels.append("Respons HTTP MCP tidak sesuai protokol")
+        else:
+            labels.append(type(item).__name__)
+        if item.__cause__ is not None:
+            queue.append(item.__cause__)
+        elif item.__context__ is not None:
+            queue.append(item.__context__)
+    return ", ".join(dict.fromkeys(labels)) or type(exc).__name__
+
+
 def list_native_tools(cfg: Settings | None = None) -> list[dict]:
     cfg = cfg or Settings.load()
     url, key = _config(cfg)
@@ -80,8 +118,10 @@ def list_native_tools(cfg: Settings | None = None) -> list[dict]:
         return asyncio.run(_list_tools(url, key))
     except Exception as exc:
         # Avoid leaking the token or network URL in errors.
-        raise NativeMT5Error("Koneksi MCP native gagal (" + type(exc).__name__
-                             + "). Periksa server aktif, URL, API key, dan tombol OK di MT5.") from None
+        raise NativeMT5Error(
+            "Koneksi MCP native gagal: " + _safe_connection_error(exc)
+            + ". Periksa URL, API key, dan server MCP MT5."
+        ) from None
 
 def _get_tool(name: str, cfg: Settings) -> dict:
     available = list_native_tools(cfg)
