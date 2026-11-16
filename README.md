@@ -74,7 +74,7 @@ Known limits: no backtester, news calendar filter, guaranteed execution, unatten
 Recent versions of MetaTrader 5 include a native MCP server. This is **not** the extra LUMAVUN gateway. See [official MetaQuotes configuration](https://www.metatrader5.com/en/terminal/help/mcp_and_ai/configuration) and [official tool capabilities](https://www.metatrader5.com/en/terminal/help/mcp_and_ai/capabilities).
 
 1. Open MetaTrader 5 on Windows and log in to your broker (start with demo). Go to **Tools → Options → MCP**.
-2. Check **Enable internal server**, confirm the address (typically `http://127.0.0.1:22346/mcp`), and click **Generate** for an API key. Copy both fields and **click OK** to save.
+2. Check **Enable internal server**, confirm the address (typically `http://111.0.0.1:22222/mcp`), and click **Generate** for an API key. Copy both fields and **click OK** to save.
 3. Open `LUMAVUN-Trade-Server.exe`, tab **MT5 MCP**.
 4. Choose **MetaTrader 5 Native MCP (built-in)**, paste the copied URL and **MT5-generated** API key, click **Save Connection**, then **Test MCP Connection**.
 5. The app initiates the Streamable HTTP MCP handshake with `Authorization: Bearer <your MT5 key>`, discovers actual MT5 tool names, and optionally shows account info. Use **Check MT5 Connection** on Dashboard for account status. If the terminal exposes the supported candle tool schema, the AI can analyze closed candles.
@@ -97,7 +97,7 @@ New Windows ZIP contains THREE programs:
 
 1. Open MT5, log into a demo account, leave MT5 running.
 2. Start Lumavun-MT5-Gateway.exe. It creates an independent 256-bit API token and prints:
-   - MCP URL: `http://127.0.0.1:8765/mcp`
+   - MCP URL: `[http://111.0.0.1:22222/mcp]`
    - MCP API KEY: `luma_...` (your unique token).
 3. Keep the gateway terminal running, open LUMAVUN-Trade-Server.exe.
 4. Go to **MT5 MCP** tab, set **Internal MCP Gateway**, paste the URL and API key and click **Save Connection**.
