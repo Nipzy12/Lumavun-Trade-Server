@@ -19,12 +19,12 @@ def run_strategy_once() -> dict:
             return {"status": "TARGET_REACHED", "realized": goal["realized"],
                     "target": goal["target"], "period": goal["period"],
                     "reason": "Target tercapai, tidak mengirim order baru."}
+    is_smc_preset = cfg.strategy.lstrip().startswith(("SMC Entry Models PRO", "Evaluate three models independently", "Only M1:", "Only M2:", "Only M3:"))
     try:
-        candles = get_candles(cfg.symbol, cfg.timeframe, 60, cfg)
-    except NativeMT5Error as exc:
+        candles = get_candles(cfg.symbol, cfg.timeframe, 350 if is_smc_preset else 60, cfg)
+    except (NativeMT5Error, RuntimeError, ValueError) as exc:
         return {"status": "DATA_UNAVAILABLE", "reason": str(exc),
                 "note": "AI tidak dijalankan dan tidak ada order dikirim."}
-    is_smc_preset = cfg.strategy.lstrip().startswith(("SMC Entry Models PRO", "Evaluate three models independently", "Only M1:", "Only M2:", "Only M3:"))
     htf_candles = None
     if is_smc_preset:
         if cfg.timeframe in ("H4", "D1"):
@@ -32,7 +32,7 @@ def run_strategy_once() -> dict:
                     "reason": "SMC H4 confirmation requires a lower execution timeframe.",
                     "note": "No AI proposal or order was sent."}
         try:
-            htf_candles = get_candles(cfg.symbol, "H4", 120, cfg)
+            htf_candles = get_candles(cfg.symbol, "H4", 350, cfg)
             if len(htf_candles) < 30 or int(htf_candles[-1]["time"]) > int(candles[-1]["time"]):
                 return {"status": "DATA_UNAVAILABLE",
                         "reason": "Closed H4 history is missing or newer than the last execution candle.",
@@ -62,20 +62,14 @@ def run_strategy_once() -> dict:
         return {"status": "SIGNAL_ONLY", "reason": setup.reason,
                 "proposal": setup.to_dict(),
                 "note": "Deterministic SMC research signal; order execution disabled."}
-    intent, reason = propose_trade(cfg, candles, htf_candles)
+    # Preserve the existing two-argument manual/AI contract.
+    intent, reason = propose_trade(cfg, candles) if htf_candles is None else propose_trade(cfg, candles, htf_candles)
     # Never retry this candle automatically, including rejected proposals.
     fresh = Settings.load()
     fresh.last_signal_bar = bar_key
     fresh.save()
     if intent is None:
         return {"status": "HOLD", "reason": reason}
-    if is_smc_preset:
-        # Natural-language Pine conversion is not a verified deterministic SMC
-        # engine. Never let it place orders, even if trading was previously armed.
-        return {"status": "SIGNAL_ONLY", "reason": reason,
-                "proposal": {"symbol": intent.symbol, "side": intent.side,
-                             "sl": intent.sl, "tp": intent.tp},
-                "note": "SMC template is advisory-only until deterministic setup validation and backtesting are implemented."}
     if cfg.mt5_mode == "mt5_native":
         # The native broker tools are dynamically typed and NOT yet risk-validated.
         # Return an AI proposal without turning it into a market order.
