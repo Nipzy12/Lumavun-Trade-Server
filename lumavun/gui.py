@@ -6,7 +6,7 @@ from PySide6.QtCore import QThread, QTimer, Signal, Qt, QSize
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QDoubleSpinBox, QFormLayout,
-    QFrame, QGridLayout, QGroupBox, QHBoxLayout, QInputDialog, QLabel, QLineEdit,
+    QDialog, QDialogButtonBox, QFrame, QGridLayout, QGroupBox, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QListWidget,
     QMainWindow, QMessageBox, QPlainTextEdit, QPushButton, QSpinBox,
     QTabWidget, QVBoxLayout, QWidget,
 )
@@ -17,7 +17,8 @@ from .native_mt5 import inspect_connection
 from .mt5_installer import PY_LAUNCHER_COMMAND, open_install_cmd
 from .ai import discover_models
 from .engine import run_strategy_once
-from .mt5_access import account_status, list_positions
+from .mt5_access import account_status, list_positions, broker_symbols
+from .symbols import suggestions
 from .office import OfficeView
 from .premium_ui import (
     STYLESHEET, PremiumPanel, PageScroll, ResponsiveRow, page_hero, spaced_form,
@@ -279,6 +280,11 @@ class Window(QMainWindow):
         self.symbol = QLineEdit(self.cfg.symbol)
         self.symbol.setPlaceholderText("Broker exact name, e.g. XAUUSDm")
         symbols.addWidget(self.symbol, 2)
+        select_symbol = QPushButton("Find Broker Symbol")
+        select_symbol.setObjectName("secondaryButton")
+        select_symbol.setToolTip("Browse actual symbols supplied by the connected broker")
+        select_symbol.clicked.connect(self.browse_broker_symbols)
+        symbols.addWidget(select_symbol)
         symbols.addWidget(QLabel("Timeframe"))
         self.timeframe = QComboBox()
         self.timeframe.addItems(("M1", "M5", "M15", "M30", "H1", "H4", "D1"))
@@ -701,9 +707,75 @@ class Window(QMainWindow):
             self.strategy.setPlainText(template)
             self.log("SMC template loaded for editing: " + name + ". Click Save Strategy to persist.")
 
+    def browse_broker_symbols(self):
+        """Search the active broker's ACTUAL symbol catalog, without guessing."""
+        def show(names):
+            dialog = QDialog(self)
+            dialog.setWindowTitle("Choose an exact broker symbol")
+            dialog.resize(560, 500)
+            layout = QVBoxLayout(dialog)
+            layout.addWidget(QLabel(
+                "Search the connected broker's instruments. Selecting a new symbol "
+                "disarms trading; the risk allowlist must be reviewed separately."
+            ))
+            search = QLineEdit(self.symbol.text().strip(), dialog)
+            search.setPlaceholderText("Search XAUUSD, GOLD, EURUSD, BTCUSD, etc.")
+            layout.addWidget(search)
+            results = QListWidget(dialog)
+            layout.addWidget(results)
+            layout.addWidget(QLabel("Broker catalog: " + str(len(names)) + " symbols"))
+            buttons = QDialogButtonBox(
+                QDialogButtonBox.StandardButton.Ok |
+                QDialogButtonBox.StandardButton.Cancel, parent=dialog)
+            layout.addWidget(buttons)
+            buttons.accepted.connect(dialog.accept)
+            buttons.rejected.connect(dialog.reject)
+            results.itemDoubleClicked.connect(lambda _: dialog.accept())
+
+            def refresh(value):
+                available = suggestions(value, names)[:300]
+                results.clear()
+                results.addItems(available)
+                if available:
+                    results.setCurrentRow(0)
+
+            search.textChanged.connect(refresh)
+            refresh(search.text())
+            if dialog.exec() != QDialog.DialogCode.Accepted:
+                return
+            item = results.currentItem()
+            chosen = item.text() if item else search.text().strip()
+            if chosen not in names:
+                self.log("Invalid selection: choose a real symbol from the broker catalog.")
+                return
+            cfg = Settings.load()
+            previous = cfg.symbol
+            if chosen != previous:
+                cfg.symbol = chosen
+                cfg.last_signal_bar = ""
+                cfg.execution_enabled = False
+                cfg.live_allowed = False
+                cfg.allow_mcp_orders = False
+                cfg.save()
+                self.symbol.setText(chosen)
+                self.refresh_mcp_arming()
+                self.office.update_roles()
+                self.log("Broker symbol changed: " + previous + " -> " + chosen +
+                         ". Trading DISARMED. Confirm Risk Guard allowed symbols before execution.")
+            else:
+                self.symbol.setText(chosen)
+                self.log("Broker symbol confirmed: " + chosen)
+
+        self.task(lambda: broker_symbols(Settings.load()), show)
+
     def save_strategy(self):
         cfg = Settings.load()
-        cfg.symbol = self.symbol.text().strip()
+        symbol = self.symbol.text().strip()
+        if cfg.symbol != symbol:
+            cfg.execution_enabled = False
+            cfg.live_allowed = False
+            cfg.allow_mcp_orders = False
+        cfg.symbol = symbol
         cfg.timeframe = self.timeframe.currentText()
         cfg.strategy = self.strategy.toPlainText().strip()
         if not cfg.symbol or not cfg.strategy:
@@ -711,7 +783,9 @@ class Window(QMainWindow):
             return
         cfg.last_signal_bar = ""
         cfg.save()
-        self.log("Strategy saved. Signal cache reset.")
+        self.log("Strategy saved. Signal cache reset. If broker symbol changed, trading was DISARMED.")
+        self.refresh_mcp_arming()
+        self.office.update_roles()
 
     def save_risk(self):
         cfg = Settings.load()
@@ -750,10 +824,24 @@ class Window(QMainWindow):
         self.log(json.dumps(result, indent=2, ensure_ascii=False))
         status = result.get("status", "")
         self.office.update_roles(analyst=status or "Ready")
-        if status in ("TARGET_REACHED", "TARGET_CHECK_UNAVAILABLE", "DATA_UNAVAILABLE") and self.timer.isActive():
+        broker_symbol = result.get("broker_symbol")
+        if broker_symbol and broker_symbol != self.symbol.text():
+            self.symbol.setText(broker_symbol)
+        if result.get("auto_resolved"):
+            self.refresh_mcp_arming()
+            self.log("Broker symbol resolved: " +
+                     str(result.get("requested_symbol")) + " -> " + str(broker_symbol) +
+                     ". Execution DISARMED; verify the exact symbol on Risk Guard allowlist.")
+        reasons = {
+            "TARGET_REACHED": "profit target reached",
+            "TARGET_CHECK_UNAVAILABLE": "profit target history could not be verified",
+            "DATA_UNAVAILABLE": "broker market data/symbol unavailable",
+            "SYMBOL_SELECTION_REQUIRED": "multiple broker symbols matched; choose one manually",
+        }
+        if status in reasons and self.timer.isActive():
             self.timer.stop()
             self.auto_button.setText("Start Auto Scan")
-            self.log("Auto scan paused by profit-target guard.")
+            self.log("Auto scan paused: " + reasons[status] + ".")
         self.office.refresh()
 
     def toggle_auto(self):

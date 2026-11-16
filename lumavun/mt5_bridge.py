@@ -73,15 +73,40 @@ def list_positions() -> list[dict]:
              "open_price": p.price_open, "sl": p.sl, "tp": p.tp,
              "profit": p.profit} for p in positions]
 
+def broker_symbols() -> list[str]:
+    """List ALL real symbol names supplied by the active MT5 broker."""
+    mt5 = _connected()
+    items = mt5.symbols_get()
+    if items is None:
+        raise RuntimeError("MT5 broker symbols_get failed: " + str(mt5.last_error()))
+    return sorted({str(item.name) for item in items if getattr(item, "name", "")},
+                  key=str.casefold)
+
+
+def resolve_broker_symbol(symbol: str, mt5=None):
+    """Read-only symbol resolution. An ambiguous market never gets auto-selected."""
+    from .symbols import match_symbol
+    mt5 = mt5 or _connected()
+    # Fast path for actual symbols; catalog is required only when unavailable.
+    if mt5.symbol_info(symbol) is not None:
+        return match_symbol(symbol, [symbol])
+    items = mt5.symbols_get()
+    if items is None:
+        raise RuntimeError("MT5 cannot read broker symbol catalog: " + str(mt5.last_error()))
+    return match_symbol(symbol, [item.name for item in items
+                                 if getattr(item, "name", "")])
+
+
 def get_candles(symbol: str, timeframe: str = "M15", count: int = 60) -> list[dict]:
     mt5 = _connected()
     if timeframe not in TIMEFRAMES:
         raise ValueError("Unsupported timeframe")
     if not (10 <= count <= 500):
         raise ValueError("Candles count must be between 10 and 500")
-    if mt5.symbol_info(symbol) is None or not mt5.symbol_select(symbol, True):
-        raise RuntimeError("Symbol unavailable: " + symbol)
-    rates = mt5.copy_rates_from_pos(symbol, getattr(mt5, TIMEFRAMES[timeframe]), 1, count)
+    exact = resolve_broker_symbol(symbol, mt5).resolved
+    if not mt5.symbol_select(exact, True):
+        raise RuntimeError("Broker symbol exists but cannot be selected: " + exact)
+    rates = mt5.copy_rates_from_pos(exact, getattr(mt5, TIMEFRAMES[timeframe]), 1, count)
     if rates is None or len(rates) < 10:
         raise RuntimeError("Not enough CLOSED MT5 candles available")
     return [{"time": int(r["time"]), "open": float(r["open"]),

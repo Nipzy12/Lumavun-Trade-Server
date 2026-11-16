@@ -10,6 +10,7 @@ import json
 from .config import Settings
 from .gateway_auth import remote_key, validate_endpoint
 from .risk import OrderIntent
+from .symbols import SymbolMatch, match_symbol
 
 class MCPGatewayError(RuntimeError):
     pass
@@ -79,6 +80,44 @@ def list_positions(cfg: Settings | None = None):
         return gateway_call("mt5_positions", {}, cfg)
     from .mt5_bridge import list_positions as direct
     return direct()
+
+def broker_symbols(cfg: Settings | None = None) -> list[str]:
+    """Return the exact symbol catalog for the SELECTED MT5 transport.
+
+    Native public MCP has no guaranteed broker-symbol listing tool. Never
+    silently query a different local MT5 account in that mode.
+    """
+    cfg = cfg or Settings.load()
+    if _native(cfg):
+        raise MCPGatewayError(
+            "Native MT5 MCP does not expose a verified broker-symbol catalog. "
+            "Use Local MT5 / LUMAVUN Gateway, or enter the exact symbol manually."
+        )
+    if _remote(cfg):
+        result = gateway_call("mt5_symbols", {}, cfg)
+        if isinstance(result, dict):
+            result = result.get("symbols", result.get("result"))
+        if not isinstance(result, list):
+            raise MCPGatewayError("MT5 Gateway symbol catalog has an invalid response")
+        names = [s for s in result if isinstance(s, str) and s.strip()]
+        if not names:
+            raise MCPGatewayError("MT5 Gateway symbol catalog is empty")
+        return names
+    from .mt5_bridge import broker_symbols as local_symbols
+    return local_symbols()
+
+
+def resolve_broker_symbol(symbol: str, cfg: Settings | None = None) -> SymbolMatch:
+    cfg = cfg or Settings.load()
+    if _native(cfg):
+        # Only the remote built-in native tool knows its account's symbols.
+        # Preserve exact user input and let native market-data tool validate it.
+        return SymbolMatch(symbol, symbol, "NATIVE_MANUAL")
+    if _remote(cfg):
+        return match_symbol(symbol, broker_symbols(cfg))
+    from .mt5_bridge import resolve_broker_symbol as local_resolver
+    return local_resolver(symbol)
+
 
 def get_candles(symbol: str, timeframe: str = "M15", count: int = 60, cfg: Settings | None = None):
     if _native(cfg):
