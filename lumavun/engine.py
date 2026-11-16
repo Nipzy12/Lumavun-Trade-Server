@@ -2,8 +2,9 @@
 from __future__ import annotations
 from .ai import propose_trade
 from .config import Settings
-from .mt5_access import get_candles, preview_order, execute_order
+from .mt5_access import get_candles, preview_order, execute_order, resolve_broker_symbol
 from .risk import TradeRejected
+from .symbols import SymbolResolutionError
 from .native_mt5 import NativeMT5Error
 from .performance import check_profit_target, HistoryUnavailable
 
@@ -20,10 +21,37 @@ def run_strategy_once() -> dict:
                     "target": goal["target"], "period": goal["period"],
                     "reason": "Target tercapai, tidak mengirim order baru."}
     is_smc_preset = cfg.strategy.lstrip().startswith(("SMC Entry Models PRO", "Evaluate three models independently", "Only M1:", "Only M2:", "Only M3:"))
+    initial_symbol = cfg.symbol
+    try:
+        match = resolve_broker_symbol(cfg.symbol, cfg)
+    except SymbolResolutionError as exc:
+        return {"status": "SYMBOL_SELECTION_REQUIRED" if exc.code == "AMBIGUOUS" else "DATA_UNAVAILABLE",
+                "reason": str(exc), "requested_symbol": cfg.symbol,
+                "candidate_symbols": exc.candidates,
+                "note": "Choose the exact broker symbol in Strategy Workbench; no order sent."}
+    except Exception as exc:
+        return {"status": "DATA_UNAVAILABLE",
+                "reason": "Broker symbol discovery unavailable: " + str(exc),
+                "note": "No analysis or order was sent."}
+    if match.changed:
+        # Update the configured broker symbol for all subsequent reads and AI.
+        # A change in the instrument identity ALWAYS disarms execution.
+        fresh = Settings.load()
+        if fresh.symbol != initial_symbol or fresh.mt5_mode != cfg.mt5_mode:
+            return {"status": "SKIP", "reason": "MT5 symbol settings changed during discovery."}
+        fresh.symbol = match.resolved
+        fresh.execution_enabled = False
+        fresh.live_allowed = False
+        fresh.allow_mcp_orders = False
+        fresh.last_signal_bar = ""
+        fresh.save()
+        cfg = fresh
+    meta = {"broker_symbol": cfg.symbol, "requested_symbol": initial_symbol,
+            "symbol_match": match.kind, "auto_resolved": match.changed}
     try:
         candles = get_candles(cfg.symbol, cfg.timeframe, 350 if is_smc_preset else 60, cfg)
     except (NativeMT5Error, RuntimeError, ValueError) as exc:
-        return {"status": "DATA_UNAVAILABLE", "reason": str(exc),
+        return {"status": "DATA_UNAVAILABLE", "reason": str(exc), **meta,
                 "note": "AI tidak dijalankan dan tidak ada order dikirim."}
     htf_candles = None
     if is_smc_preset:
@@ -43,7 +71,7 @@ def run_strategy_once() -> dict:
                     "note": "No AI proposal or order was sent."}
     bar_key = cfg.symbol + ":" + cfg.timeframe + ":" + str(candles[-1]["time"])
     if cfg.last_signal_bar == bar_key:
-        return {"status": "SKIP", "reason": "Already evaluated the latest closed candle"}
+        return {"status": "SKIP", "reason": "Already evaluated the latest closed candle", **meta}
     if is_smc_preset:
         from .smc_engine import evaluate
         strategy = cfg.strategy.lstrip()
@@ -58,9 +86,9 @@ def run_strategy_once() -> dict:
         fresh.last_signal_bar = bar_key
         fresh.save()
         if setup is None:
-            return {"status": "HOLD", "reason": "No deterministic SMC setup meets model and H4 filters."}
+            return {"status": "HOLD", "reason": "No deterministic SMC setup meets model and H4 filters.", **meta}
         return {"status": "SIGNAL_ONLY", "reason": setup.reason,
-                "proposal": setup.to_dict(),
+                "proposal": setup.to_dict(), **meta,
                 "note": "Deterministic SMC research signal; order execution disabled."}
     # Preserve the existing two-argument manual/AI contract.
     intent, reason = propose_trade(cfg, candles) if htf_candles is None else propose_trade(cfg, candles, htf_candles)
@@ -69,20 +97,20 @@ def run_strategy_once() -> dict:
     fresh.last_signal_bar = bar_key
     fresh.save()
     if intent is None:
-        return {"status": "HOLD", "reason": reason}
+        return {"status": "HOLD", "reason": reason, **meta}
     if cfg.mt5_mode == "mt5_native":
         # The native broker tools are dynamically typed and NOT yet risk-validated.
         # Return an AI proposal without turning it into a market order.
         return {"status": "SIGNAL_ONLY", "reason": reason,
                 "proposal": {"symbol": intent.symbol, "side": intent.side,
-                             "sl": intent.sl, "tp": intent.tp},
+                             "sl": intent.sl, "tp": intent.tp}, **meta,
                 "note": "Native MetaTrader MCP is read-only for automatic trading. "
                         "Use Local Terminal mode for risk-checked execution."}
     try:
         preview = preview_order(intent, cfg)
     except TradeRejected as exc:
-        return {"status": "REJECTED", "reason": str(exc), "ai_reason": reason}
+        return {"status": "REJECTED", "reason": str(exc), "ai_reason": reason, **meta}
     if not Settings.load().execution_enabled:
-        return {"status": "PREVIEW", "reason": reason, "order": preview}
+        return {"status": "PREVIEW", "reason": reason, "order": preview, **meta}
     result = execute_order(intent)
-    return {"status": "EXECUTED", "reason": reason, "order": result}
+    return {"status": "EXECUTED", "reason": reason, "order": result, **meta}
